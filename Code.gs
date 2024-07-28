@@ -2,18 +2,23 @@
   Made for Google Workspace Hackathon 2024 (GDSC APU)
   Project Name: Form-mation
   Team: SCAC
-  Developer: Hong
-  Version: 2.0
-  Last Modified: 28 July 2024 4:20PM GMT+8
+  Developer: Hong, Kar Kin
+  Version: 2.2
+  Last Modified: 28 July 2024 6:00PM GMT+8
 */
 
+// Changes to these may require update to addRowConversion()
 const SETUP_MAIN_COLUMN = [
   "Enabled", "Name", "Type",
   "TemplateUrl", "GDriveOutputUrl", "GFormUrl",
 ];
+
 const PROJECT_FOLDER_NAME = "Form-mation";
+
+// Changes to these require manual update to REGEX in getUniqueVariables()
 const VAR_PREFIX = "{";
 const VAR_SUFFIX = "}";
+
 const SUPPORTED_TYPE = {
   EMAIL: "Email",
   DOC_TO_PDF: "Doc-to-PDF",
@@ -28,7 +33,80 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('SCAC')
     .addItem('Reload', 'reload')
+    .addSeparator()
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('Conversion')
+      .addItem('Email','setEmailConversion')
+      .addItem('Doc To PDF','setDocToPdfConversion')
+      .addItem('Doc To Doc','setDocToDocConversion')
+      .addItem('Slide To Slide','setSlideToSlideConversion')
+      .addItem('Slide To PDF','setSlideToPdfConversion')
+      )
     .addToUi();
+}
+
+function setEmailConversion() {
+  addRowConversion(SUPPORTED_TYPE.EMAIL);
+}
+
+function setDocToPdfConversion() {
+  addRowConversion(SUPPORTED_TYPE.DOC_TO_PDF);
+}
+
+function setDocToDocConversion() {
+  addRowConversion(SUPPORTED_TYPE.DOC_TO_DOC);
+}
+
+function setSlideToSlideConversion() {
+  addRowConversion(SUPPORTED_TYPE.SLIDE_TO_SLIDE);
+}
+
+function setSlideToPdfConversion() {
+  addRowConversion(SUPPORTED_TYPE.SLIDE_TO_PDF);
+}
+
+function addRowConversion(type) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+
+  for (var j = 1; j < data.length; j++) {
+    if (data[j][1] == "") {
+      var lastRow = j
+      break;
+    }
+  }
+  var fileName = 'Untitled Setup';
+
+  if (
+    type === SUPPORTED_TYPE.DOC_TO_DOC ||
+    type === SUPPORTED_TYPE.DOC_TO_PDF ||
+    type === SUPPORTED_TYPE.EMAIL
+  ) {
+    var document = DocumentApp.create(fileName),
+      documentId = document.getId();
+
+    DriveApp.getFileById(documentId).moveTo(getProjectFolder());
+
+    var documentUrl = `https://docs.google.com/document/d/${documentId}/edit`;
+
+    var inputs = [fileName, type, documentUrl, getProjectFolder().getUrl()];
+    if (type === SUPPORTED_TYPE.EMAIL) {
+      inputs.pop();
+    }
+    sheet.getRange(lastRow + 1, 2, 1, inputs.length).setValues([inputs]);
+  } else if (
+    type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
+    type === SUPPORTED_TYPE.SLIDE_TO_PDF
+  ) {
+    var slide = SlidesApp.create(fileName),
+      slideId = slide.getId();
+
+    DriveApp.getFileById(slideId).moveTo(getProjectFolder());
+
+    var slideUrl = `https://docs.google.com/presentation/d/${slideId}/edit`;
+
+    var inputs = [fileName, type, slideUrl, getProjectFolder().getUrl()];
+    sheet.getRange(lastRow + 1, 2, 1, inputs.length).setValues([inputs]);
+  }
 }
 
 function onEdit(e) {
@@ -102,6 +180,13 @@ function reload() {
       cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
       cpSetupObj.Type === SUPPORTED_TYPE.EMAIL
     ) {
+      if (
+        disableRow(
+          !cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/")
+        , row, "'Template Link' contains an invalid Google Docs link.")
+      ) {
+        continue;
+      }
       // check if row does not have GFormUrl and Variables filled, will auto find and input variables into CP and generate Google Form to be inserted
       var uVariables = getUniqueVariables(cpSetupObj);
       if (
@@ -121,19 +206,36 @@ function reload() {
         SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("GFormUrl")+1).setValue(newGFormLink);
 
         // update cpSetupObj for the remainder of this process
-        console.log({uVariables, newGFormLink})
         cpSetupObj.GFormUrl = newGFormLink;
         cpSetupObj.Variables = uVariables;
       }
+    } else if (
+      cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
+      cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF
+    ) {
+      if (
+        disableRow(
+          !cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/presentation/d/")
+        , row, "'Template Link' contains an invalid Google Slides link.")
+      ) {
+        continue;
+      }
     }
 
-    // if row has Variables but not have GFormUrl, will disable row
+    // if row does not have GFormUrl, will disable row
     if (
       disableRow(
-        cpSetupObj.Variables.length > 0 &&
         (!cpSetupObj.GFormUrl || cpSetupObj.GFormUrl == "")
       , row, "'Google Forms Link' is required!")
     ) continue;
+
+    if (
+      disableRow(
+        !cpSetupObj.GFormUrl.startsWith("https://docs.google.com/forms/d/")
+      , row, "'Google Forms Link' contains an invalid Google Forms link.")
+    ) {
+      continue;
+    }
 
     if (cpSetupObj.Type === SUPPORTED_TYPE.EMAIL) {
       // if row does not have "EMAIL" as first variable, will disable row

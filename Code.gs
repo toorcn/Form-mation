@@ -3,14 +3,15 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong
-  Version: 1.8.1
-  Last Modified: 28 July 2024 4:00AM GMT+8
+  Version: 2.0
+  Last Modified: 28 July 2024 4:20PM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
   "Enabled", "Name", "Type",
-  "TemplateUrl", "GFormUrl", "GDriveOutputUrl",
+  "TemplateUrl", "GDriveOutputUrl", "GFormUrl",
 ];
+const PROJECT_FOLDER_NAME = "Form-mation";
 const VAR_PREFIX = "{";
 const VAR_SUFFIX = "}";
 const SUPPORTED_TYPE = {
@@ -30,9 +31,18 @@ function onOpen() {
     .addToUi();
 }
 
-function disableRow(boolean, row) {
+function onEdit(e) {
+  const range = e.range;
+  if (range.getColumn() === 1) {
+    range.setNote('Last modified: ' + new Date() + "\n\nRemember to Reload!");
+  }
+}
+
+function disableRow(boolean, row, noteMsg) {
   if (boolean) {
-    SpreadsheetApp.getActiveSheet().getRange(row, 1).setValue(false);
+    const range = SpreadsheetApp.getActiveSheet().getRange(row, 1);
+    range.setValue(false);
+    range.setNote(noteMsg);
   }
   return boolean;
 }
@@ -71,15 +81,58 @@ function reload() {
   for (var i = 0; i < controlPanelSetups.length; i++) {
     row++;
     const cpSetupObj = controlPanelSetups[i];
+
+    // remove hyperlink to publish URL of Name
+    SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("Name")+1).setValue(cpSetupObj.Name);
+
     if (!cpSetupObj) continue;
     if (!cpSetupObj.Enabled) continue;
 
-    // if row does not have Template GDoc or GSheet, will disable row
+    // if row has no type, name, or template, will disable row
     if (
       disableRow(
-        (!cpSetupObj.TemplateUrl || cpSetupObj.TemplateUrl == "") ||
+        (!cpSetupObj.Name || cpSetupObj.Name == "") ||
+        (!cpSetupObj.Type || cpSetupObj.Type == "") || 
+        (!cpSetupObj.TemplateUrl || cpSetupObj.TemplateUrl == "")
+      , row, "'Name', 'Type', and 'Template Link' is required!")
+    ) continue;
+
+    if (
+      cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC ||
+      cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
+      cpSetupObj.Type === SUPPORTED_TYPE.EMAIL
+    ) {
+      // check if row does not have GFormUrl and Variables filled, will auto find and input variables into CP and generate Google Form to be inserted
+      var uVariables = getUniqueVariables(cpSetupObj);
+      if (
+        (!cpSetupObj.GFormUrl || cpSetupObj.GFormUrl == "") &&
+        cpSetupObj.Variables.length === 0 
+      ) {
+        // set first variable as "EMAIL"
+        if (cpSetupObj.Type === SUPPORTED_TYPE.EMAIL) {
+          uVariables = uVariables.filter(function(value, index, array) {
+            return value != "EMAIL";
+          });
+          uVariables.unshift("EMAIL");
+        }
+
+        addVariablesToCP(row, uVariables);
+        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables);
+        SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("GFormUrl")+1).setValue(newGFormLink);
+
+        // update cpSetupObj for the remainder of this process
+        console.log({uVariables, newGFormLink})
+        cpSetupObj.GFormUrl = newGFormLink;
+        cpSetupObj.Variables = uVariables;
+      }
+    }
+
+    // if row has Variables but not have GFormUrl, will disable row
+    if (
+      disableRow(
+        cpSetupObj.Variables.length > 0 &&
         (!cpSetupObj.GFormUrl || cpSetupObj.GFormUrl == "")
-      , row)
+      , row, "'Google Forms Link' is required!")
     ) continue;
 
     if (cpSetupObj.Type === SUPPORTED_TYPE.EMAIL) {
@@ -87,7 +140,7 @@ function reload() {
       if (
         disableRow(
           (!cpSetupObj.Variables[0] || cpSetupObj.Variables[0] != "EMAIL")
-        , row)
+        , row, "For Type 'Email', the variable in the Control Panel must be 'EMAIL'.")
       ) continue;
       setEmailTrigger(cpSetupObj);
     } else {
@@ -95,7 +148,7 @@ function reload() {
       if (
         disableRow(
           (!cpSetupObj.GDriveOutputUrl || cpSetupObj.GDriveOutputUrl == "")
-        , row)
+        , row, "'Google Drive Link' is required!")
       ) continue;
 
       if (
@@ -116,10 +169,23 @@ function reload() {
       //   setSheetTrigger(cpSetupObj);
       // }
     }
+
+    // set label name to hyperlink to published form URL
+    updateNameWithFormPushlishedUrl(cpSetupObj, row);
+
+    // acknowledge successful setups
+    SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("Enabled")+1).setNote('Setup Successful!\nAcknowledgement time: ' + new Date());
   }
 }
 
-// For future code refactor use (as of v1.8)
+function updateNameWithFormPushlishedUrl(cpSetupObj, row) {
+  const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
+  const formPublishedUrl = form.getPublishedUrl();
+  const newValue = `=HYPERLINK("${formPublishedUrl}", "${cpSetupObj.Name}")`;
+  SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("Name")+1).setValue(newValue);
+}
+
+// For future code refactor use (as of v2.0)
 function createTrigger(cpSetupObj, funcName) {
   const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
   const triggerId = ScriptApp.newTrigger(funcName)
@@ -157,60 +223,60 @@ function setSlideTrigger(cpSetupObj) {
       .getUniqueId();
 }
 
-// Current not in use as of v1.8
-function setSheetTrigger(cpSetupObj) {
-  const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
-  const triggerId = ScriptApp.newTrigger('onSheetTrigger')
-      .forForm(gf)
-      .onFormSubmit()
-      .create()
-      .getUniqueId(); 
-}
+// // Current not in use as of v2.0
+// function setSheetTrigger(cpSetupObj) {
+//   const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
+//   const triggerId = ScriptApp.newTrigger('onSheetTrigger')
+//       .forForm(gf)
+//       .onFormSubmit()
+//       .create()
+//       .getUniqueId(); 
+// }
 
-// Current not in use as of v1.8
-function onSheetTrigger(e) {
-  // get form by triggerUid
-  const gFormId = getFileByTriggerId(e.triggerUid);
-  // Retrieve submitted form data
-  const formResponseData = getLatestFormResponse(gFormId);
+// // Current not in use as of v2.0
+// function onSheetTrigger(e) {
+//   // get form by triggerUid
+//   const gFormId = getFileByTriggerId(e.triggerUid);
+//   // Retrieve submitted form data
+//   const formResponseData = getLatestFormResponse(gFormId);
 
-  var cpDataObj;
-  // Get control panel setup data based on formId
-  const cpSetups = getControlPanelSetups();
-  for (var i = 0; i < cpSetups.length; i++) {
-    const cpSetupObj = cpSetups[i];
-    if (cpSetupObj.GFormUrl.toString().includes(gFormId)) {
-      cpDataObj = cpSetupObj;
-    }
-  }
+//   var cpDataObj;
+//   // Get control panel setup data based on formId
+//   const cpSetups = getControlPanelSetups();
+//   for (var i = 0; i < cpSetups.length; i++) {
+//     const cpSetupObj = cpSetups[i];
+//     if (cpSetupObj.GFormUrl.toString().includes(gFormId)) {
+//       cpDataObj = cpSetupObj;
+//     }
+//   }
 
-  // get gsheets template
-  const templateSheet = SpreadsheetApp.openByUrl(cpDataObj.TemplateUrl);
-  const gSheetsTemplate = DriveApp.getFileById(templateSheet.getId());
+//   // get gsheets template
+//   const templateSheet = SpreadsheetApp.openByUrl(cpDataObj.TemplateUrl);
+//   const gSheetsTemplate = DriveApp.getFileById(templateSheet.getId());
 
-  var outputFileName = templateSheet.getName();
+//   var outputFileName = templateSheet.getName();
 
-  // get drive output location
-  // for ref https://drive.google.com/drive/u/0/folders/1yPBt0GbZweFD9wQoqRTA4oReuIU7-Jth
-  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(43);
-  const destinationFolder = DriveApp.getFolderById(outputFolderId);
+//   // get drive output location
+//   // for ref https://drive.google.com/drive/u/0/folders/1yPBt0GbZweFD9wQoqRTA4oReuIU7-Jth
+//   const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(43);
+//   const destinationFolder = DriveApp.getFolderById(outputFolderId);
 
-  const copy = gSheetsTemplate.makeCopy(outputFileName, destinationFolder);
-  const sheets = SpreadsheetApp.openById(copy.getId());
+//   const copy = gSheetsTemplate.makeCopy(outputFileName, destinationFolder);
+//   const sheets = SpreadsheetApp.openById(copy.getId());
 
-  sheets.getSheets().forEach(function(sheet) {
+//   sheets.getSheets().forEach(function(sheet) {
     
-  });
+//   });
 
-  copy.setName(outputFileName);
+//   copy.setName(outputFileName);
 
-  // if (cpDataObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF) {
-  //   var blob = DriveApp.getFileById(sheets.getId()).getBlob();
-  //   destinationFolder.createFile(blob);
-  //   const sheetsFile = DriveApp.getFileById(sheets.getId());
-  //   sheetsFile.setTrashed(true);
-  // }
-}
+//   // if (cpDataObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF) {
+//   //   var blob = DriveApp.getFileById(sheets.getId()).getBlob();
+//   //   destinationFolder.createFile(blob);
+//   //   const sheetsFile = DriveApp.getFileById(sheets.getId());
+//   //   sheetsFile.setTrashed(true);
+//   // }
+// }
 
 function onSlideTrigger(e) {
   // get form by triggerUid
@@ -306,7 +372,7 @@ function onDocTrigger(e) {
     const variableName = cpDataObj.Variables[j];
     const replacementData = formResponseData[j];
     Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
-    if (variableName.includes("IMG") && replacementData.toString().length > 30) {
+    if (variableName.startsWith("IMG") && replacementData.toString().length > 30) {
       var image = DriveApp.getFileById(replacementData).getBlob();
       replaceTextToImage(body, VAR_PREFIX + variableName + VAR_SUFFIX, image, parseIMGVarName(variableName));
       continue;
@@ -383,7 +449,7 @@ function onEmailTrigger(e) {
     const variableName = cpDataObj.Variables[j];
     const replacementData = formResponseData[j];
     Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
-    if (variableName.includes("IMG") && replacementData.toString().length > 30) {
+    if (variableName.startsWith("IMG") && replacementData.toString().length > 30) {
       const imgSrcUrl = `https://lh3.googleusercontent.com/d/${replacementData}`;
       const imgHtml = `<img src="${imgSrcUrl}" style="width: ${parseIMGVarName(variableName)}">`;
       html = strReplaceAll(html, VAR_PREFIX + variableName + VAR_SUFFIX, imgHtml);
@@ -483,4 +549,59 @@ function deleteAllTrigger() {
   for (let index = 0; index < allTriggers.length; index++) {
     ScriptApp.deleteTrigger(allTriggers[index]);
   }
+}
+
+// finds all potential variables from google docs and returns an array of unique variables
+function getUniqueVariables(cpDataObj) {
+  const doc = DocumentApp.openByUrl(cpDataObj.TemplateUrl);
+  const body = doc.getBody();
+
+  const variables = body.getText().match(/(?<=\{).+?(?=\})/g);
+  if (!variables || variables.length === 0) {
+    return [];
+  }
+  // Remove all duplicates
+  const uVariables = variables.filter(function(value, index, arr) {
+    return arr.indexOf(value) === index;
+  });
+
+  return uVariables;
+}
+
+function addVariablesToCP(row, variables) {
+  var column = SETUP_MAIN_COLUMN.length;
+  variables.forEach(function(variable) {
+    SpreadsheetApp.getActiveSheet().getRange(row, column + 1).setValue(variable);
+    column++;
+  });
+}
+
+function getProjectFolder() {
+  const drive = DriveApp.getFoldersByName(PROJECT_FOLDER_NAME);
+  // create project folder if not exist
+  if (!drive.hasNext()) {
+    DriveApp.createFolder(PROJECT_FOLDER_NAME);
+  } 
+  const folder = DriveApp.getFoldersByName(PROJECT_FOLDER_NAME);
+
+  return folder.next();
+}
+
+function generateGoogleForms(cpDataObj, uVariables) {
+  const newForm = FormApp.create(cpDataObj.Name);
+  DriveApp.getFileById(newForm.getId()).moveTo(getProjectFolder());
+  
+  const form = FormApp.openById(newForm.getId());
+
+  uVariables.forEach(function(variable) {
+    const formItem = form.addParagraphTextItem();
+    formItem.setRequired(true);
+    if (variable.startsWith("IMG")) {
+      formItem.setTitle(variable + " [CHANGE THIS TO 'File upload' TYPE -> 'Allow only specific file types' -> 'Image' ]");
+      return;
+    }
+    formItem.setTitle(variable);
+  });
+
+  return form.getEditUrl();
 }

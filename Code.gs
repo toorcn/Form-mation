@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 2.2
-  Last Modified: 28 July 2024 6:00PM GMT+8
+  Version: 2.3
+  Last Modified: 28 July 2024 10:30PM GMT+8
 */
 
 // Changes to these may require update to addRowConversion()
@@ -38,6 +38,7 @@ function onOpen() {
       .addItem('Email','setEmailConversion')
       .addItem('Doc To PDF','setDocToPdfConversion')
       .addItem('Doc To Doc','setDocToDocConversion')
+      .addSeparator()
       .addItem('Slide To Slide','setSlideToSlideConversion')
       .addItem('Slide To PDF','setSlideToPdfConversion')
       )
@@ -360,7 +361,8 @@ function setSlideTrigger(cpSetupObj) {
 
 //   // get drive output location
 //   // for ref https://drive.google.com/drive/u/0/folders/1yPBt0GbZweFD9wQoqRTA4oReuIU7-Jth
-//   const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(43);
+  // const outputFolderIdStartingIndex = cpDataObj.GDriveOutputUrl.toString().indexOf("folders/") + 8;
+  // const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(outputFolderIdStartingIndex);
 //   const destinationFolder = DriveApp.getFolderById(outputFolderId);
 
 //   const copy = gSheetsTemplate.makeCopy(outputFileName, destinationFolder);
@@ -403,8 +405,8 @@ function onSlideTrigger(e) {
   var outputFileName = templateSlide.getName();
 
   // get drive output location
-  // for ref https://drive.google.com/drive/u/0/folders/1yPBt0GbZweFD9wQoqRTA4oReuIU7-Jth
-  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(43);
+  const outputFolderIdStartingIndex = cpDataObj.GDriveOutputUrl.toString().indexOf("folders/") + 8;
+  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(outputFolderIdStartingIndex);
   const destinationFolder = DriveApp.getFolderById(outputFolderId);
 
   const copy = gSlidesTemplate.makeCopy(outputFileName, destinationFolder);
@@ -459,8 +461,8 @@ function onDocTrigger(e) {
   var outputFileName = templateDoc.getName();
 
   // get drive output location
-  // for ref https://drive.google.com/drive/u/0/folders/1yPBt0GbZweFD9wQoqRTA4oReuIU7-Jth
-  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(43);
+  const outputFolderIdStartingIndex = cpDataObj.GDriveOutputUrl.toString().indexOf("folders/") + 8;
+  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(outputFolderIdStartingIndex);
   const destinationFolder = DriveApp.getFolderById(outputFolderId);
 
   const copy = gDocTemplate.makeCopy(outputFileName, destinationFolder);
@@ -658,10 +660,25 @@ function getUniqueVariables(cpDataObj) {
   const doc = DocumentApp.openByUrl(cpDataObj.TemplateUrl);
   const body = doc.getBody();
 
-  const variables = body.getText().match(/(?<=\{).+?(?=\})/g);
+  var variables = body.getText().match(/(?<=\{).+?(?=\})/g);
+  const docNameVariables = doc.getName().match(/(?<=\{).+?(?=\})/g);
+
   if (!variables || variables.length === 0) {
+    // If document has variables, return those
+    if (docNameVariables) {
+      return docNameVariables.filter(function(value, index, arr) {
+        return arr.indexOf(value) === index;
+      });
+    }
     return [];
   }
+
+  if (docNameVariables) {
+    docNameVariables.forEach(function(value) {
+      variables.unshift(value);
+    });
+  }
+
   // Remove all duplicates
   const uVariables = variables.filter(function(value, index, arr) {
     return arr.indexOf(value) === index;

@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 2.3
-  Last Modified: 28 July 2024 10:30PM GMT+8
+  Version: 2.4
+  Last Modified: 12 August 2024 9:00AM GMT+8
 */
 
 // Changes to these may require update to addRowConversion()
@@ -15,9 +15,11 @@ const SETUP_MAIN_COLUMN = [
 
 const PROJECT_FOLDER_NAME = "Form-mation";
 
-// Changes to these require manual update to REGEX in getUniqueVariables()
 const VAR_PREFIX = "{";
 const VAR_SUFFIX = "}";
+
+const patternString = `(?<=${VAR_PREFIX}).+?(?=${VAR_SUFFIX})`;
+const uvRegex = new RegExp(patternString, 'g');
 
 const SUPPORTED_TYPE = {
   EMAIL: "Email",
@@ -188,12 +190,14 @@ function reload() {
       ) {
         continue;
       }
-      // check if row does not have GFormUrl and Variables filled, will auto find and input variables into CP and generate Google Form to be inserted
-      var uVariables = getUniqueVariables(cpSetupObj);
+      // check if row does not have GFormUrl and Variables filled
       if (
         (!cpSetupObj.GFormUrl || cpSetupObj.GFormUrl == "") &&
         cpSetupObj.Variables.length === 0 
       ) {
+        // auto find and input variables into CP and generate Google Form to be inserted
+        var uVariables = getDocsUniqueVariables(cpSetupObj);
+
         // set first variable as "EMAIL"
         if (cpSetupObj.Type === SUPPORTED_TYPE.EMAIL) {
           uVariables = uVariables.filter(function(value, index, array) {
@@ -221,6 +225,22 @@ function reload() {
       ) {
         continue;
       }
+      // check if row does not have GFormUrl and Variables filled
+      if (
+        (!cpSetupObj.GFormUrl || cpSetupObj.GFormUrl == "") &&
+        cpSetupObj.Variables.length === 0 
+      ) {
+        // auto find and input variables into CP and generate Google Form to be inserted
+        var uVariables = getSlidesUniqueVariables(cpSetupObj);
+
+        addVariablesToCP(row, uVariables);
+        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables);
+        SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("GFormUrl")+1).setValue(newGFormLink);
+
+        // update cpSetupObj for the remainder of this process
+        cpSetupObj.GFormUrl = newGFormLink;
+        cpSetupObj.Variables = uVariables;
+      }
     }
 
     // if row does not have GFormUrl, will disable row
@@ -243,9 +263,9 @@ function reload() {
       if (
         disableRow(
           (!cpSetupObj.Variables[0] || cpSetupObj.Variables[0] != "EMAIL")
-        , row, "For Type 'Email', the variable in the Control Panel must be 'EMAIL'.")
+        , row, "For Type 'Email', the first variable in the Control Panel must be 'EMAIL'.")
       ) continue;
-      setEmailTrigger(cpSetupObj);
+      createTrigger(cpSetupObj, "onEmailTrigger");
     } else {
       // if row does not have Output GDrive Link, will disable row
       if (
@@ -259,17 +279,17 @@ function reload() {
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC
       ) {
         // (TOOD) Validate GDriveOutputUrl as accessible folder and link
-        setDocTrigger(cpSetupObj);
+        createTrigger(cpSetupObj, "onDocTrigger");
       } else if (
         cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
         cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF
       ) {
-        setSlideTrigger(cpSetupObj);
+        createTrigger(cpSetupObj, "onSlideTrigger");
       }
       //  else if (
       //   cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET
       // ) {
-      //   setSheetTrigger(cpSetupObj);
+      //   createTrigger(cpSetupObj, "onSheetTrigger");
       // }
     }
 
@@ -288,7 +308,6 @@ function updateNameWithFormPushlishedUrl(cpSetupObj, row) {
   SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("Name")+1).setValue(newValue);
 }
 
-// For future code refactor use (as of v2.0)
 function createTrigger(cpSetupObj, funcName) {
   const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
   const triggerId = ScriptApp.newTrigger(funcName)
@@ -298,43 +317,6 @@ function createTrigger(cpSetupObj, funcName) {
       .getUniqueId();
   Logger.log("Trigger created for '" + cpSetupObj.Name + "' to function '" + funcName + "' with triggerUID '" + triggerId + "'");
 }
-
-function setEmailTrigger(cpSetupObj) {
-  const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
-  const triggerId = ScriptApp.newTrigger('onEmailTrigger')
-      .forForm(gf)
-      .onFormSubmit()
-      .create()
-      .getUniqueId();
-}
-
-function setDocTrigger(cpSetupObj) {
-  const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
-  const triggerId = ScriptApp.newTrigger('onDocTrigger')
-      .forForm(gf)
-      .onFormSubmit()
-      .create()
-      .getUniqueId();
-}
-
-function setSlideTrigger(cpSetupObj) {
-  const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
-  const triggerId = ScriptApp.newTrigger('onSlideTrigger')
-      .forForm(gf)
-      .onFormSubmit()
-      .create()
-      .getUniqueId();
-}
-
-// // Current not in use as of v2.0
-// function setSheetTrigger(cpSetupObj) {
-//   const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
-//   const triggerId = ScriptApp.newTrigger('onSheetTrigger')
-//       .forForm(gf)
-//       .onFormSubmit()
-//       .create()
-//       .getUniqueId(); 
-// }
 
 // // Current not in use as of v2.0
 // function onSheetTrigger(e) {
@@ -478,6 +460,7 @@ function onDocTrigger(e) {
     Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
     if (variableName.startsWith("IMG") && replacementData.toString().length > 30) {
       var image = DriveApp.getFileById(replacementData).getBlob();
+
       replaceTextToImage(body, VAR_PREFIX + variableName + VAR_SUFFIX, image, parseIMGVarName(variableName));
       continue;
     }
@@ -574,7 +557,7 @@ function parseIMGVarName(varName) {
   // const varName = "IMG-S_G2";
 
   var widthPX = 150; // default size for S
-  const width = varName.match(/(?<=\-).+?(?=\_)/g)[0];
+  const width = varName.match(/(?<=\-).+?(?=\_)/g)[0]; // getting first value between "-" and "_"
   
   if (
     width === "S" ||
@@ -656,15 +639,18 @@ function deleteAllTrigger() {
 }
 
 // finds all potential variables from google docs and returns an array of unique variables
-function getUniqueVariables(cpDataObj) {
+function getDocsUniqueVariables(cpDataObj) {
   const doc = DocumentApp.openByUrl(cpDataObj.TemplateUrl);
   const body = doc.getBody();
 
-  var variables = body.getText().match(/(?<=\{).+?(?=\})/g);
-  const docNameVariables = doc.getName().match(/(?<=\{).+?(?=\})/g);
+  // var variables = body.getText().match(/(?<=\{).+?(?=\})/g);
+  // const docNameVariables = doc.getName().match(/(?<=\{).+?(?=\})/g);
+
+  var variables = body.getText().match(uvRegex);
+  const docNameVariables = doc.getName().match(uvRegex);
 
   if (!variables || variables.length === 0) {
-    // If document has variables, return those
+    // If document name has variables, return those
     if (docNameVariables) {
       return docNameVariables.filter(function(value, index, arr) {
         return arr.indexOf(value) === index;
@@ -674,7 +660,10 @@ function getUniqueVariables(cpDataObj) {
   }
 
   if (docNameVariables) {
-    docNameVariables.forEach(function(value) {
+    const uniqueDNVs = docNameVariables.filter(function(value, index, arr) {
+      return arr.indexOf(value) === index;
+    });
+    uniqueDNVs.forEach(function(value) {
       variables.unshift(value);
     });
   }
@@ -685,6 +674,40 @@ function getUniqueVariables(cpDataObj) {
   });
 
   return uVariables;
+}
+
+function getSlidesUniqueVariables(cpDataObj) {
+  const slides = SlidesApp.openByUrl(cpDataObj.TemplateUrl);
+
+  var variables = [];
+
+  // get slide name variables
+  const slideNameVariables = slides.getName().match(uvRegex);
+  if (slideNameVariables) {
+    const uniqueSNVs = slideNameVariables.filter(function(value, index, arr) {
+      return arr.indexOf(value) === index;
+    });
+    uniqueSNVs.forEach(function(value) {
+      variables.push(value);
+    });
+  }
+
+  // get individual slides' variables
+  slides.getSlides().forEach(function(slide) {
+    var shapes = (slide.getShapes());
+    shapes.forEach(function(shape) {
+      const shapeVariables = shape.getText().asString().match(uvRegex);
+      if (!shapeVariables) return;
+      shapeVariables.forEach(function(value) {
+        variables.push(value);
+      });
+    }); 
+  });
+
+  const uniqueVars = variables.filter(function(value, index, arr) {
+    return arr.indexOf(value) === index;
+  });
+  return uniqueVars;
 }
 
 function addVariablesToCP(row, variables) {

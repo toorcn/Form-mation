@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 2.5
-  Last Modified: 13 August 2024 2:20PM GMT+8
+  Version: 3.0
+  Last Modified: 13 August 2024 6:00PM GMT+8
 */
 
 // Changes to these may require update to addRowConversion()
@@ -27,14 +27,15 @@ const SUPPORTED_TYPE = {
   DOC_TO_DOC: "Doc-to-Doc",
   SLIDE_TO_SLIDE: "Slide-to-Slide",
   SLIDE_TO_PDF: "Slide-to-PDF",
-  // SHEET_TO_SHEET: "Sheet-to-Sheet"
+  SHEET_TO_SHEET: "Sheet-to-Sheet",
+  SHEET_TO_PDF: "Sheet-to-PDF"
 };
 
 // To show the menu item to reload
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('SCAC')
-    .addItem('Reload', 'reload')
+    .createMenu('Form-mation')
+    .addItem('Validate', 'reload')
     .addSeparator()
     .addSubMenu(SpreadsheetApp.getUi().createMenu('Conversion')
       .addItem('Email','setEmailConversion')
@@ -240,6 +241,33 @@ function reload() {
         cpSetupObj.GFormUrl = newGFormLink;
         cpSetupObj.Variables = uVariables;
       }
+    } else if (
+      cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
+      cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF
+    ) {
+      if (
+        disableRow(
+          !cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/spreadsheets/d/")
+        , row, "'Template Link' contains an invalid Google Sheets link.")
+      ) {
+        continue;
+      }
+      // check if row does not have GFormUrl and Variables filled
+      if (
+        (!cpSetupObj.GFormUrl || cpSetupObj.GFormUrl == "") &&
+        cpSetupObj.Variables.length === 0 
+      ) {
+        // auto find and input variables into CP and generate Google Form to be inserted
+        var uVariables = getSheetsUniqueVariables(cpSetupObj);
+
+        addVariablesToCP(row, uVariables);
+        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables);
+        SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("GFormUrl")+1).setValue(newGFormLink);
+
+        // update cpSetupObj for the remainder of this process
+        cpSetupObj.GFormUrl = newGFormLink;
+        cpSetupObj.Variables = uVariables;
+      }
     }
 
     // if row does not have GFormUrl, will disable row
@@ -277,19 +305,18 @@ function reload() {
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC
       ) {
-        // (TOOD) Validate GDriveOutputUrl as accessible folder and link
         createTrigger(cpSetupObj, "onDocTrigger");
       } else if (
         cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
         cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF
       ) {
         createTrigger(cpSetupObj, "onSlideTrigger");
+      } else if (
+        cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
+        cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF
+      ) {
+        createTrigger(cpSetupObj, "onSheetTrigger");
       }
-      //  else if (
-      //   cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET
-      // ) {
-      //   createTrigger(cpSetupObj, "onSheetTrigger");
-      // }
     }
 
     // set label name to hyperlink to published form URL
@@ -317,51 +344,55 @@ function createTrigger(cpSetupObj, funcName) {
   Logger.log("Trigger created for '" + cpSetupObj.Name + "' to function '" + funcName + "' with triggerUID '" + triggerId + "'");
 }
 
-// // Current not in use as of v2.0
-// function onSheetTrigger(e) {
-//   // get form by triggerUid
-//   const gFormId = getFileByTriggerId(e.triggerUid);
-//   // Retrieve submitted form data
-//   const formResponseData = getLatestFormResponse(gFormId);
+function onSheetTrigger(e) {
+  // get form by triggerUid
+  const gFormId = getFileByTriggerId(e.triggerUid);
+  // Retrieve submitted form data
+  const formResponseData = getLatestFormResponse(gFormId);
 
-//   var cpDataObj;
-//   // Get control panel setup data based on formId
-//   const cpSetups = getControlPanelSetups();
-//   for (var i = 0; i < cpSetups.length; i++) {
-//     const cpSetupObj = cpSetups[i];
-//     if (cpSetupObj.GFormUrl.toString().includes(gFormId)) {
-//       cpDataObj = cpSetupObj;
-//     }
-//   }
+  var cpDataObj;
+  // Get control panel setup data based on formId
+  const cpSetups = getControlPanelSetups();
+  for (var i = 0; i < cpSetups.length; i++) {
+    const cpSetupObj = cpSetups[i];
+    if (cpSetupObj.GFormUrl.toString().includes(gFormId)) {
+      cpDataObj = cpSetupObj;
+    }
+  }
 
-//   // get gsheets template
-//   const templateSheet = SpreadsheetApp.openByUrl(cpDataObj.TemplateUrl);
-//   const gSheetsTemplate = DriveApp.getFileById(templateSheet.getId());
+  // get gsheets template
+  const templateSheet = SpreadsheetApp.openByUrl(cpDataObj.TemplateUrl);
+  const gSheetsTemplate = DriveApp.getFileById(templateSheet.getId());
 
-//   var outputFileName = templateSheet.getName();
+  var outputFileName = templateSheet.getName();
 
-//   // get drive output location
-//   // for ref https://drive.google.com/drive/u/0/folders/1yPBt0GbZweFD9wQoqRTA4oReuIU7-Jth
-  // const outputFolderIdStartingIndex = cpDataObj.GDriveOutputUrl.toString().indexOf("folders/") + 8;
-  // const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(outputFolderIdStartingIndex);
-//   const destinationFolder = DriveApp.getFolderById(outputFolderId);
+  // get drive output location
+  const outputFolderIdStartingIndex = cpDataObj.GDriveOutputUrl.toString().indexOf("folders/") + 8;
+  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(outputFolderIdStartingIndex);
+  const destinationFolder = DriveApp.getFolderById(outputFolderId);
 
-//   const copy = gSheetsTemplate.makeCopy(outputFileName, destinationFolder);
-//   const sheets = SpreadsheetApp.openById(copy.getId());
+  const copy = gSheetsTemplate.makeCopy(outputFileName, destinationFolder);
+  const sheets = SpreadsheetApp.openById(copy.getId());
 
-//   sheets.getSheets().forEach(function(sheet) {
-    
-//   });
+  sheets.getSheets().forEach(function(sheet) {
+    for (var j = 0; j < cpDataObj.Variables.length; j++) {
+      const variableName = cpDataObj.Variables[j];
+      const replacementData = formResponseData[j];
+      Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
+      sheet.createTextFinder(VAR_PREFIX + variableName + VAR_SUFFIX).replaceAllWith(replacementData);
+      outputFileName = strReplaceAll(outputFileName, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
+    }
+  });
 
-//   copy.setName(outputFileName);
+  copy.setName(outputFileName);
 
-//   // if (cpDataObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF) {
-//   //   var blob = DriveApp.getFileById(sheets.getId()).getBlob();
-//   //   destinationFolder.createFile(blob);
-//   //   const sheetsFile = DriveApp.getFileById(sheets.getId());
-//   //   sheetsFile.setTrashed(true);
-//   // }
-// }
+  if (cpDataObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF) {
+    var blob = DriveApp.getFileById(sheets.getId()).getBlob();
+    destinationFolder.createFile(blob);
+    const sheetsFile = DriveApp.getFileById(sheets.getId());
+    sheetsFile.setTrashed(true);
+  }
+}
 
 function onSlideTrigger(e) {
   // get form by triggerUid
@@ -457,7 +488,7 @@ function onDocTrigger(e) {
     const variableName = cpDataObj.Variables[j];
     const replacementData = formResponseData[j];
     Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
-    if (variableName.startsWith("IMG") && replacementData.toString().length > 30) {
+    if (variableName.startsWith("IMG") && replacementData.toString().length > 30 && fileExist(replacementData)) {
       var image = DriveApp.getFileById(replacementData).getBlob();
 
       replaceTextToImage(body, VAR_PREFIX + variableName + VAR_SUFFIX, image, parseIMGVarName(variableName));
@@ -530,16 +561,21 @@ function onEmailTrigger(e) {
 
   var subject = templateDoc.getName();
 
+  var inlineImages = {};
+
   // loop thru all variables specified & replace specified variables with form value
   for (var j = 0; j < cpDataObj.Variables.length; j++) {
     const variableName = cpDataObj.Variables[j];
     const replacementData = formResponseData[j];
     Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
-    if (variableName.startsWith("IMG") && replacementData.toString().length > 30) {
-      const imgSrcUrl = `https://lh3.googleusercontent.com/d/${replacementData}`;
-      const imgHtml = `<img src="${imgSrcUrl}" style="width: ${parseIMGVarName(variableName)}">`;
+    if (variableName.startsWith("IMG") && replacementData.toString().length > 30 && fileExist(replacementData)) {
+      const varDisplayName = variableName.substring(variableName.indexOf('_') + 1);
+      const imgHtml = `<img src='cid:${variableName}' style='width:${parseIMGVarName(variableName)}px;'>`;
       html = strReplaceAll(html, VAR_PREFIX + variableName + VAR_SUFFIX, imgHtml);
-      Logger.log(`full: ${VAR_PREFIX + variableName + VAR_SUFFIX}, imgHtm: ${imgHtml}`);
+      const imageBlob = getFileUploadBlob(replacementData).setName(varDisplayName);
+      inlineImages[variableName] = imageBlob;
+
+      Logger.log(`find: ${VAR_PREFIX + variableName + VAR_SUFFIX}, imgHtm: ${imgHtml}`);
       continue;
     }
     html = strReplaceAll(html, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
@@ -554,11 +590,39 @@ function onEmailTrigger(e) {
     cc: emails.ccEmails,
     bcc: emails.bccEmail,
     subject: subject,
-    htmlBody: html
+    htmlBody: html,
+    inlineImages: inlineImages
   });
 }
 
-function getEmails() {
+function fileExist(fileId) {
+  var exist = false;
+  try {
+    DriveApp.getFileById(fileId);
+    exist = true;
+  } catch (e) {
+
+  } finally {
+    return exist;
+  }
+}
+
+function getFileUploadBlob(fileId) {  
+  const imgSrcUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+  const params = {
+    method: "get",
+    headers: {
+      "Authorization": "Bearer " + ScriptApp.getOAuthToken()
+    },
+    muteHttpExceptions: true,
+  };
+  const imageBlob = UrlFetchApp
+    .fetch(imgSrcUrl, params)
+    .getBlob();
+  return imageBlob;
+}
+
+function getEmails(emailStr) {
   var toEmails = emailStr;
   var ccEmails = "";
   var bccEmails = "";
@@ -625,7 +689,8 @@ function parseIMGVarName(varName) {
   // const varName = "IMG-S_G2";
 
   var widthPX = 150; // default size for S
-  const width = varName.match(/(?<=\-).+?(?=\_)/g)[0]; // getting first value between "-" and "_"
+  var width = varName.match(/(?<=\-).+?(?=\_)/g)[0]; // getting first value between "-" and "_"
+  width = width.toUpperCase();
   
   if (
     width === "S" ||
@@ -778,6 +843,39 @@ function getSlidesUniqueVariables(cpDataObj) {
   return uniqueVars;
 }
 
+function getSheetsUniqueVariables(cpDataObj) {
+  const sheets = SpreadsheetApp.openByUrl(cpDataObj.TemplateUrl);
+
+  var variables = [];
+
+  // get spreadsheet name variables
+  const sheetNameVariables = sheets.getName().match(uvRegex);
+  if (sheetNameVariables) {
+    const uniqueSNVs = sheetNameVariables.filter(function(value, index, arr) {
+      return arr.indexOf(value) === index;
+    });
+    uniqueSNVs.forEach(function(value) {
+      variables.push(value);
+    });
+  }
+
+  // get individual sheets' variables
+  sheets.getSheets().forEach(function(sheet) {
+    sheet.getDataRange().getValues().forEach(function(row) {
+      const rowVariables = row.toString().match(uvRegex);
+      if (!rowVariables) return;
+      rowVariables.forEach(function(value) {
+        variables.push(value);
+      });
+    });
+  });
+
+  const uniqueVars = variables.filter(function(value, index, arr) {
+    return arr.indexOf(value) === index;
+  });
+  return uniqueVars;
+}
+
 function addVariablesToCP(row, variables) {
   var column = SETUP_MAIN_COLUMN.length;
   variables.forEach(function(variable) {
@@ -807,7 +905,9 @@ function generateGoogleForms(cpDataObj, uVariables) {
     const formItem = form.addParagraphTextItem();
     formItem.setRequired(true);
     if (variable.startsWith("IMG")) {
-      formItem.setTitle(variable + " [CHANGE THIS TO 'File upload' TYPE -> 'Allow only specific file types' -> 'Image' ]");
+      const varDisplayName = variable.substring(variable.indexOf('_') + 1);
+      formItem.setTitle(varDisplayName);
+      formItem.setHelpText("[CHANGE THIS TO 'File upload' TYPE -> 'Allow only specific file types' -> 'Image']")
       return;
     }
     formItem.setTitle(variable);

@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 2.4
-  Last Modified: 12 August 2024 9:00AM GMT+8
+  Version: 2.5
+  Last Modified: 13 August 2024 2:20PM GMT+8
 */
 
 // Changes to these may require update to addRowConversion()
@@ -40,7 +40,6 @@ function onOpen() {
       .addItem('Email','setEmailConversion')
       .addItem('Doc To PDF','setDocToPdfConversion')
       .addItem('Doc To Doc','setDocToDocConversion')
-      .addSeparator()
       .addItem('Slide To Slide','setSlideToSlideConversion')
       .addItem('Slide To PDF','setSlideToPdfConversion')
       )
@@ -547,9 +546,78 @@ function onEmailTrigger(e) {
     subject = strReplaceAll(subject, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
   }
 
-  MailApp.sendEmail(formResponseData[0], subject, html, {
+  const emailField = formResponseData[0];
+  const emails = getEmails(emailField);
+
+  MailApp.sendEmail({
+    to: emails.toEmails,
+    cc: emails.ccEmails,
+    bcc: emails.bccEmail,
+    subject: subject,
     htmlBody: html
   });
+}
+
+function getEmails() {
+  var toEmails = emailStr;
+  var ccEmails = "";
+  var bccEmails = "";
+
+  if (emailStr.toString().includes(" bcc:")) {
+    const str = emailStr.split(" bcc:")[1];
+    bccEmails = str;
+    // remove before cc
+    if (str.toString().includes(" cc:")) {
+      bccEmails = str.split(" cc:")[0];
+    }
+  }
+  if (emailStr.toString().includes(" cc:")) {
+    const str = emailStr.split(" cc:")[1];
+    ccEmails = str;
+    // remove before bcc
+    if (str.toString().includes(" bcc:")) {
+      ccEmails = str.split(" bcc:")[0];
+    }
+  }
+
+  // toEmails 
+  if (ccEmails || bccEmails) {
+    if (emailStr.toString().includes(" cc:")) {
+      const str = emailStr.split(" cc:")[0];
+      toEmails = str;
+      if (str.includes(" bcc:")) {
+        toEmails = str.split(" bcc:")[0];
+      }
+    }
+    if (emailStr.includes(" bcc:")) {
+      const str = emailStr.split(" bcc:")[0];
+      toEmails = str;
+      if (str.includes(" cc:")) {
+        toEmails = str.split(" cc:")[0];
+      }
+    }
+  }
+  if (toEmails.startsWith("cc:")) {
+    toEmails = "";
+    const str = emailStr.split("cc:")[1];
+    ccEmails = str;
+    // remove before bcc
+    if (ccEmails.endsWith(" b")) {
+      ccEmails = ccEmails.substring(0, ccEmails.length-2);
+    }
+  }
+  if (toEmails.startsWith("bcc:")) {
+    toEmails = "";
+    const str = emailStr.split("bcc:")[1];
+    bccEmails = str;
+    // remove before cc
+    if (str.toString().includes(" cc:")) {
+      bccEmails = str.split(" cc:")[0];
+    }
+  }
+
+  console.log({toEmails, ccEmails, bccEmails});
+  return {toEmails, ccEmails, bccEmails};
 }
 
 function parseIMGVarName(varName) {

@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 3.0
-  Last Modified: 13 August 2024 6:00PM GMT+8
+  Version: 3.1
+  Last Modified: 13 August 2024 10:50PM GMT+8
 */
 
 // Changes to these may require update to addRowConversion()
@@ -15,8 +15,8 @@ const SETUP_MAIN_COLUMN = [
 
 const PROJECT_FOLDER_NAME = "Form-mation";
 
-const VAR_PREFIX = "{";
-const VAR_SUFFIX = "}";
+const VAR_PREFIX = "{{";
+const VAR_SUFFIX = "}}";
 
 const patternString = `(?<=${VAR_PREFIX}).+?(?=${VAR_SUFFIX})`;
 const uvRegex = new RegExp(patternString, 'g');
@@ -298,8 +298,16 @@ function reload() {
       if (
         disableRow(
           (!cpSetupObj.GDriveOutputUrl || cpSetupObj.GDriveOutputUrl == "")
-        , row, "'Google Drive Link' is required!")
+        , row, "'Google Drive Folder Link' is required!")
       ) continue;
+
+      if (
+        disableRow(
+          !cpSetupObj.GDriveOutputUrl.startsWith("https://drive.google.com/drive/folders/")
+        , row, "'Google Drive Folder Link' contains an invalid Google Drive folder link.")
+      ) {
+        continue;
+      }
 
       if (
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
@@ -344,12 +352,9 @@ function createTrigger(cpSetupObj, funcName) {
   Logger.log("Trigger created for '" + cpSetupObj.Name + "' to function '" + funcName + "' with triggerUID '" + triggerId + "'");
 }
 
-function onSheetTrigger(e) {
-  // get form by triggerUid
-  const gFormId = getFileByTriggerId(e.triggerUid);
-  // Retrieve submitted form data
-  const formResponseData = getLatestFormResponse(gFormId);
+function getIdFromUrl(url) { return url.match(/[-\w]{25,}/); }
 
+function getCPSetupFromFormId(gFormId) {
   var cpDataObj;
   // Get control panel setup data based on formId
   const cpSetups = getControlPanelSetups();
@@ -359,6 +364,16 @@ function onSheetTrigger(e) {
       cpDataObj = cpSetupObj;
     }
   }
+  return cpDataObj;
+}
+
+function onSheetTrigger(e) {
+  // get form by triggerUid
+  const gFormId = getFileByTriggerId(e.triggerUid);
+  // Retrieve submitted form data
+  const formResponseData = getLatestFormResponse(gFormId);
+  // Get control panel setup data based on formId
+  var cpDataObj = getCPSetupFromFormId(gFormId);
 
   // get gsheets template
   const templateSheet = SpreadsheetApp.openByUrl(cpDataObj.TemplateUrl);
@@ -367,11 +382,9 @@ function onSheetTrigger(e) {
   var outputFileName = templateSheet.getName();
 
   // get drive output location
-  const outputFolderIdStartingIndex = cpDataObj.GDriveOutputUrl.toString().indexOf("folders/") + 8;
-  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(outputFolderIdStartingIndex);
-  const destinationFolder = DriveApp.getFolderById(outputFolderId);
+  const destinationFolder = DriveApp.getFolderById(getIdFromUrl(cpDataObj.GDriveOutputUrl));
 
-  const copy = gSheetsTemplate.makeCopy(outputFileName, destinationFolder);
+  const copy = gSheetsTemplate.makeCopy("[FORM-MATION | PROCESSING] " + cpDataObj.Name, destinationFolder);
   const sheets = SpreadsheetApp.openById(copy.getId());
 
   sheets.getSheets().forEach(function(sheet) {
@@ -384,9 +397,10 @@ function onSheetTrigger(e) {
     }
   });
 
-  copy.setName(outputFileName);
+  copy.setName(outputFileName);   
 
   if (cpDataObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF) {
+    copy.setName(copy.getName() + ".pdf");
     var blob = DriveApp.getFileById(sheets.getId()).getBlob();
     destinationFolder.createFile(blob);
     const sheetsFile = DriveApp.getFileById(sheets.getId());
@@ -399,16 +413,8 @@ function onSlideTrigger(e) {
   const gFormId = getFileByTriggerId(e.triggerUid);
   // Retrieve submitted form data
   const formResponseData = getLatestFormResponse(gFormId);
-
-  var cpDataObj;
   // Get control panel setup data based on formId
-  const cpSetups = getControlPanelSetups();
-  for (var i = 0; i < cpSetups.length; i++) {
-    const cpSetupObj = cpSetups[i];
-    if (cpSetupObj.GFormUrl.toString().includes(gFormId)) {
-      cpDataObj = cpSetupObj;
-    }
-  }
+  var cpDataObj = getCPSetupFromFormId(gFormId);
 
   // get gslides template
   const templateSlide = SlidesApp.openByUrl(cpDataObj.TemplateUrl);
@@ -417,11 +423,9 @@ function onSlideTrigger(e) {
   var outputFileName = templateSlide.getName();
 
   // get drive output location
-  const outputFolderIdStartingIndex = cpDataObj.GDriveOutputUrl.toString().indexOf("folders/") + 8;
-  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(outputFolderIdStartingIndex);
-  const destinationFolder = DriveApp.getFolderById(outputFolderId);
+  const destinationFolder = DriveApp.getFolderById(getIdFromUrl(cpDataObj.GDriveOutputUrl));
 
-  const copy = gSlidesTemplate.makeCopy(outputFileName, destinationFolder);
+  const copy = gSlidesTemplate.makeCopy("[FORM-MATION | PROCESSING] " + cpDataObj.Name, destinationFolder);
   const slides = SlidesApp.openById(copy.getId());
 
   slides.getSlides().forEach(function(slide) {
@@ -437,10 +441,11 @@ function onSlideTrigger(e) {
     }); 
   });
 
-  slides.setName(outputFileName);
+  slides.setName(outputFileName);  
   slides.saveAndClose();
 
   if (cpDataObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF) {
+    slides.setName(slides.getName() + ".pdf");
     var blob = DriveApp.getFileById(slides.getId()).getBlob();
     destinationFolder.createFile(blob);
     const slidesFile = DriveApp.getFileById(slides.getId());
@@ -455,16 +460,8 @@ function onDocTrigger(e) {
   const gFormId = getFileByTriggerId(e.triggerUid);
   // Retrieve submitted form data
   const formResponseData = getLatestFormResponse(gFormId);
-
-  var cpDataObj;
   // Get control panel setup data based on formId
-  const cpSetups = getControlPanelSetups();
-  for (var i = 0; i < cpSetups.length; i++) {
-    const cpSetupObj = cpSetups[i];
-    if (cpSetupObj.GFormUrl.toString().includes(gFormId)) {
-      cpDataObj = cpSetupObj;
-    }
-  }
+  var cpDataObj = getCPSetupFromFormId(gFormId);
 
   // get gdoc template
   const templateDoc = DocumentApp.openByUrl(cpDataObj.TemplateUrl);
@@ -473,11 +470,9 @@ function onDocTrigger(e) {
   var outputFileName = templateDoc.getName();
 
   // get drive output location
-  const outputFolderIdStartingIndex = cpDataObj.GDriveOutputUrl.toString().indexOf("folders/") + 8;
-  const outputFolderId = cpDataObj.GDriveOutputUrl.toString().substring(outputFolderIdStartingIndex);
-  const destinationFolder = DriveApp.getFolderById(outputFolderId);
+  const destinationFolder = DriveApp.getFolderById(getIdFromUrl(cpDataObj.GDriveOutputUrl));
 
-  const copy = gDocTemplate.makeCopy(outputFileName, destinationFolder);
+  const copy = gDocTemplate.makeCopy("[FORM-MATION | PROCESSING] " + cpDataObj.Name, destinationFolder);
   const doc = DocumentApp.openById(copy.getId());
   //All of the content lives in the body, so we get that for editing
   const body = doc.getBody();
@@ -498,10 +493,11 @@ function onDocTrigger(e) {
     outputFileName = strReplaceAll(outputFileName, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
   }
   
-  doc.setName(outputFileName);
+  doc.setName(outputFileName); 
   doc.saveAndClose();
 
   if (cpDataObj.Type === SUPPORTED_TYPE.DOC_TO_PDF) {
+    doc.setName(doc.getName() + ".pdf");
     const pdf = convertToPdf_(doc, destinationFolder); // Convert the doc to a PDF file.
     const url = pdf.getUrl(); // Get the URL of the new PDF file.
     const docFile = DriveApp.getFileById(doc.getId()); // Get the temporary Google Docs file.
@@ -539,16 +535,8 @@ function onEmailTrigger(e) {
   const gFormId = getFileByTriggerId(e.triggerUid);
   // Retrieve submitted form data
   const formResponseData = getLatestFormResponse(gFormId);
-
-  var cpDataObj;
   // Get control panel setup data based on formId
-  const cpSetups = getControlPanelSetups();
-  for (var i = 0; i < cpSetups.length; i++) {
-    const cpSetupObj = cpSetups[i];
-    if (cpSetupObj.GFormUrl.toString().includes(gFormId)) {
-      cpDataObj = cpSetupObj;
-    }
-  }
+  var cpDataObj = getCPSetupFromFormId(gFormId);
 
   // Stop operation if first variable is not {EMAIL}
   if (cpDataObj.Variables[0] != "EMAIL") return;
@@ -912,6 +900,8 @@ function generateGoogleForms(cpDataObj, uVariables) {
     }
     formItem.setTitle(variable);
   });
+
+  form.setConfirmationMessage("Google Drive Folder: " + cpDataObj.GDriveOutputUrl);
 
   return form.getEditUrl();
 }

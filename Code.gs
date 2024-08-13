@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 3.1
-  Last Modified: 13 August 2024 10:50PM GMT+8
+  Version: 3.2
+  Last Modified: 13 August 2024 11:50PM GMT+8
 */
 
 // Changes to these may require update to addRowConversion()
@@ -114,6 +114,7 @@ function addRowConversion(type) {
 
 function onEdit(e) {
   const range = e.range;
+  range.clearNote();
   if (range.getColumn() === 1) {
     range.setNote('Last modified: ' + new Date() + "\n\nRemember to Reload!");
   }
@@ -435,6 +436,17 @@ function onSlideTrigger(e) {
         const variableName = cpDataObj.Variables[j];
         const replacementData = formResponseData[j];
         Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
+        if (
+          variableName.startsWith("IMG") && 
+          replacementData.toString().length > 30 && 
+          fileExist(replacementData) &&
+          shape.getText().asString().startsWith(VAR_PREFIX + "IMG")
+        ) {
+          var image = DriveApp.getFileById(replacementData).getBlob();
+          shape.replaceWithImage(image);
+          continue;
+        }
+
         shape.getText().replaceAllText(VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
         outputFileName = strReplaceAll(outputFileName, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
       }
@@ -477,13 +489,16 @@ function onDocTrigger(e) {
   //All of the content lives in the body, so we get that for editing
   const body = doc.getBody();
   
-  //In these lines, we replace our replacement tokens with values from our spreadsheet row
   // loop thru all variables specified & replace specified variables with form value
   for (var j = 0; j < cpDataObj.Variables.length; j++) {
     const variableName = cpDataObj.Variables[j];
     const replacementData = formResponseData[j];
     Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
-    if (variableName.startsWith("IMG") && replacementData.toString().length > 30 && fileExist(replacementData)) {
+    if (
+      variableName.startsWith("IMG") && 
+      replacementData.toString().length > 30 && 
+      fileExist(replacementData)
+    ) {
       var image = DriveApp.getFileById(replacementData).getBlob();
 
       replaceTextToImage(body, VAR_PREFIX + variableName + VAR_SUFFIX, image, parseIMGVarName(variableName));
@@ -556,7 +571,11 @@ function onEmailTrigger(e) {
     const variableName = cpDataObj.Variables[j];
     const replacementData = formResponseData[j];
     Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
-    if (variableName.startsWith("IMG") && replacementData.toString().length > 30 && fileExist(replacementData)) {
+    if (
+      variableName.startsWith("IMG") && 
+      replacementData.toString().length > 30 && 
+      fileExist(replacementData)
+    ) {
       const varDisplayName = variableName.substring(variableName.indexOf('_') + 1);
       const imgHtml = `<img src='cid:${variableName}' style='width:${parseIMGVarName(variableName)}px;'>`;
       html = strReplaceAll(html, VAR_PREFIX + variableName + VAR_SUFFIX, imgHtml);

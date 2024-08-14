@@ -3,11 +3,10 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 3.3
-  Last Modified: 14 August 2024 2:20PM GMT+8
+  Version: 3.4
+  Last Modified: 14 August 2024 4:45PM GMT+8
 */
 
-// Changes to these may require update to addRowConversion()
 const SETUP_MAIN_COLUMN = [
   "Enabled", "Name", "Type",
   "TemplateUrl", "GDriveOutputUrl", "GFormUrl",
@@ -18,9 +17,6 @@ const PROJECT_FOLDER_NAME = "Form-mation";
 const VAR_PREFIX = "{{";
 const VAR_SUFFIX = "}}";
 
-const patternString = `(?<=${VAR_PREFIX}).+?(?=${VAR_SUFFIX})`;
-const uvRegex = new RegExp(patternString, 'g');
-
 const SUPPORTED_TYPE = {
   EMAIL: "Email",
   DOC_TO_PDF: "Doc-to-PDF",
@@ -30,6 +26,41 @@ const SUPPORTED_TYPE = {
   SHEET_TO_SHEET: "Sheet-to-Sheet",
   SHEET_TO_PDF: "Sheet-to-PDF"
 };
+
+const DEFAULT_TYPE_TEMPLATE = {
+  EMAIL: {
+    name: "Email Sample",
+    url: "https://docs.google.com/document/d/1LLRoaCZpEDCcByKSMTpsoav95Y5xhLmK5fLEJkda_d0/edit"
+  },
+  DOC_TO_DOC: {
+    name: "Doc Sample",
+    url: "https://docs.google.com/document/d/1JpqjS33Jl-538x0XhxdLIJCQhOsC0JvnrGc1e4jfxVM/edit"
+  },
+  DOC_TO_PDF: {
+    name: "Doc Sample",
+    url: "https://docs.google.com/document/d/1OGE4YggdJnJWDOtPRMetByNULJD_c4HPNX_pEnfX1YM/edit"
+  },
+  SLIDE_TO_SLIDE: {
+    name: "Slide Sample",
+    url: "https://docs.google.com/presentation/d/1GaWQQmruGXa-2MM06aHinr5fNhTqsaZ5QDdd7y6MjOo/edit"
+  },
+  SLIDE_TO_PDF: {
+    name: "Slide Sample",
+    url: "https://docs.google.com/presentation/d/1ndQrvvW2QWOYijM17yS6mmYdXGAl2uOyCHlT0Vma31k/edit"
+  },
+  SHEET_TO_SHEET: {
+    name: "Sheet Sample",
+    url: "https://docs.google.com/spreadsheets/d/1kJpe7FUw8jhjOt7aWm5_y9DvR1KWU21rQG2MSmJw78A/edit"    
+  },
+  SHEET_TO_PDF: {
+    name: "Sheet Sample",
+    url: "https://docs.google.com/spreadsheets/d/1aB3CuHHOZZbihWrKrk2ME781DoIxO55luDBNWsd5LYI/edit"    
+  }
+};
+
+// Regular Expression used to find and retrieve variables
+const patternString = `(?<=${VAR_PREFIX}).+?(?=${VAR_SUFFIX})`;
+const uvRegex = new RegExp(patternString, 'g');
 
 // To show the menu item to reload
 function onOpen() {
@@ -43,29 +74,19 @@ function onOpen() {
       .addItem('Doc To Doc','setDocToDocConversion')
       .addItem('Slide To Slide','setSlideToSlideConversion')
       .addItem('Slide To PDF','setSlideToPdfConversion')
+      .addItem('Sheet To Sheet', 'setSheetToSheetConversion')
+      .addItem('Sheet To PDF', 'setSheetToPdfConversion')
       )
     .addToUi();
 }
 
-function setEmailConversion() {
-  addRowConversion(SUPPORTED_TYPE.EMAIL);
-}
-
-function setDocToPdfConversion() {
-  addRowConversion(SUPPORTED_TYPE.DOC_TO_PDF);
-}
-
-function setDocToDocConversion() {
-  addRowConversion(SUPPORTED_TYPE.DOC_TO_DOC);
-}
-
-function setSlideToSlideConversion() {
-  addRowConversion(SUPPORTED_TYPE.SLIDE_TO_SLIDE);
-}
-
-function setSlideToPdfConversion() {
-  addRowConversion(SUPPORTED_TYPE.SLIDE_TO_PDF);
-}
+function setEmailConversion() { addRowConversion(SUPPORTED_TYPE.EMAIL); }
+function setDocToPdfConversion() { addRowConversion(SUPPORTED_TYPE.DOC_TO_PDF); }
+function setDocToDocConversion() { addRowConversion(SUPPORTED_TYPE.DOC_TO_DOC); }
+function setSlideToSlideConversion() { addRowConversion(SUPPORTED_TYPE.SLIDE_TO_SLIDE); }
+function setSlideToPdfConversion() { addRowConversion(SUPPORTED_TYPE.SLIDE_TO_PDF); }
+function setSheetToSheetConversion() { addRowConversion(SUPPORTED_TYPE.SHEET_TO_SHEET); }
+function setSheetToPdfConversion() { addRowConversion(SUPPORTED_TYPE.SHEET_TO_PDF); }
 
 function addRowConversion(type) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
@@ -77,39 +98,25 @@ function addRowConversion(type) {
       break;
     }
   }
-  var fileName = 'Untitled Setup';
 
-  if (
-    type === SUPPORTED_TYPE.DOC_TO_DOC ||
-    type === SUPPORTED_TYPE.DOC_TO_PDF ||
-    type === SUPPORTED_TYPE.EMAIL
-  ) {
-    var document = DocumentApp.create(fileName),
-      documentId = document.getId();
+  const { url, name } = DEFAULT_TYPE_TEMPLATE[getKeyByValue(SUPPORTED_TYPE, type)];
 
-    DriveApp.getFileById(documentId).moveTo(getProjectFolder());
+  var templateFile = DriveApp.getFileById(getIdFromUrl(url));
+  var copy = templateFile.makeCopy(templateFile.getName(), getProjectFolder());
+  var inputs = [];
 
-    var documentUrl = `https://docs.google.com/document/d/${documentId}/edit`;
-
-    var inputs = [fileName, type, documentUrl, getProjectFolder().getUrl()];
-    if (type === SUPPORTED_TYPE.EMAIL) {
-      inputs.pop();
-    }
-    sheet.getRange(lastRow + 1, 2, 1, inputs.length).setValues([inputs]);
-  } else if (
-    type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
-    type === SUPPORTED_TYPE.SLIDE_TO_PDF
-  ) {
-    var slide = SlidesApp.create(fileName),
-      slideId = slide.getId();
-
-    DriveApp.getFileById(slideId).moveTo(getProjectFolder());
-
-    var slideUrl = `https://docs.google.com/presentation/d/${slideId}/edit`;
-
-    var inputs = [fileName, type, slideUrl, getProjectFolder().getUrl()];
-    sheet.getRange(lastRow + 1, 2, 1, inputs.length).setValues([inputs]);
+  inputs[SETUP_MAIN_COLUMN.indexOf("Name")] = name;
+  inputs[SETUP_MAIN_COLUMN.indexOf("Type")] = type;
+  inputs[SETUP_MAIN_COLUMN.indexOf("TemplateUrl")] = copy.getUrl();
+  if (type !== SUPPORTED_TYPE.EMAIL) {
+    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getProjectFolder().getUrl();
   }
+
+  sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
+}
+
+function getKeyByValue(object, value) {
+  return Object.keys(object).find(key => object[key] === value);
 }
 
 function onEdit(e) {
@@ -922,6 +929,7 @@ function generateGoogleForms(cpDataObj, uVariables) {
   });
 
   if (cpDataObj.Type === SUPPORTED_TYPE.EMAIL) {
+    form.getItems()[0].setHelpText(`Example: "hong@email.ext cc: doe@mail.ext, jane@www.ext bcc: termi@rock.ext"`);
     form.setConfirmationMessage("Thank you for using Form-mation!");
   } else {
     form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpDataObj.GDriveOutputUrl);

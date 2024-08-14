@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 3.2
-  Last Modified: 13 August 2024 11:50PM GMT+8
+  Version: 3.3
+  Last Modified: 14 August 2024 2:20PM GMT+8
 */
 
 // Changes to these may require update to addRowConversion()
@@ -579,7 +579,7 @@ function onEmailTrigger(e) {
       const varDisplayName = variableName.substring(variableName.indexOf('_') + 1);
       const imgHtml = `<img src='cid:${variableName}' style='width:${parseIMGVarName(variableName)}px;'>`;
       html = strReplaceAll(html, VAR_PREFIX + variableName + VAR_SUFFIX, imgHtml);
-      const imageBlob = getFileUploadBlob(replacementData).setName(varDisplayName);
+      const imageBlob = DriveApp.getFileById(replacementData).getBlob().setName(varDisplayName);
       inlineImages[variableName] = imageBlob;
 
       Logger.log(`find: ${VAR_PREFIX + variableName + VAR_SUFFIX}, imgHtm: ${imgHtml}`);
@@ -589,16 +589,29 @@ function onEmailTrigger(e) {
     subject = strReplaceAll(subject, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
   }
 
+  var attachmentFiles = [];
+
+  // if form consist more than required, Email attachments exist
+  if (formResponseData.length > cpDataObj.Variables.length) {
+    for (var i = cpDataObj.Variables.length; i < formResponseData.length; i++) {
+      const attachmentFileId = formResponseData[i];
+      if (!fileExist(attachmentFileId)) continue;
+      const file = DriveApp.getFileById(attachmentFileId);
+      attachmentFiles.push(file.getBlob());
+    }
+  }
+
   const emailField = formResponseData[0];
   const emails = getEmails(emailField);
 
   MailApp.sendEmail({
     to: emails.toEmails,
     cc: emails.ccEmails,
-    bcc: emails.bccEmail,
+    bcc: emails.bccEmails,
     subject: subject,
     htmlBody: html,
-    inlineImages: inlineImages
+    inlineImages: inlineImages,
+    attachments: attachmentFiles
   });
 }
 
@@ -612,21 +625,6 @@ function fileExist(fileId) {
   } finally {
     return exist;
   }
-}
-
-function getFileUploadBlob(fileId) {  
-  const imgSrcUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
-  const params = {
-    method: "get",
-    headers: {
-      "Authorization": "Bearer " + ScriptApp.getOAuthToken()
-    },
-    muteHttpExceptions: true,
-  };
-  const imageBlob = UrlFetchApp
-    .fetch(imgSrcUrl, params)
-    .getBlob();
-  return imageBlob;
 }
 
 function getEmails(emailStr) {
@@ -911,7 +909,10 @@ function generateGoogleForms(cpDataObj, uVariables) {
   uVariables.forEach(function(variable) {
     const formItem = form.addParagraphTextItem();
     formItem.setRequired(true);
-    if (variable.startsWith("IMG")) {
+    if (
+      variable.startsWith("IMG") &&
+      variable.includes("_")
+    ) {
       const varDisplayName = variable.substring(variable.indexOf('_') + 1);
       formItem.setTitle(varDisplayName);
       formItem.setHelpText("[CHANGE THIS TO 'File upload' TYPE -> 'Allow only specific file types' -> 'Image']")
@@ -920,7 +921,11 @@ function generateGoogleForms(cpDataObj, uVariables) {
     formItem.setTitle(variable);
   });
 
-  form.setConfirmationMessage("Google Drive Folder: " + cpDataObj.GDriveOutputUrl);
+  if (cpDataObj.Type === SUPPORTED_TYPE.EMAIL) {
+    form.setConfirmationMessage("Thank you for using Form-mation!");
+  } else {
+    form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpDataObj.GDriveOutputUrl);
+  }
 
   return form.getEditUrl();
 }

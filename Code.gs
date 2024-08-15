@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 3.4
-  Last Modified: 14 August 2024 4:45PM GMT+8
+  Version: 3.5
+  Last Modified: 16 August 2024 12:40AM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
@@ -68,7 +68,16 @@ function onOpen() {
     .createMenu('Form-mation')
     .addItem('Validate', 'reload')
     .addSeparator()
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('Conversion')
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('New Blank Template')
+      .addItem('Email','setEmailBlank')
+      .addItem('Doc To PDF','setDocToPdfBlank')
+      .addItem('Doc To Doc','setDocToDocBlank')
+      .addItem('Slide To Slide','setSlideToSlideBlank')
+      .addItem('Slide To PDF','setSlideToPdfBlank')
+      .addItem('Sheet To Sheet', 'setSheetToSheetBlank')
+      .addItem('Sheet To PDF', 'setSheetToPdfBlank')
+    )
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('New Sample Template')
       .addItem('Email','setEmailConversion')
       .addItem('Doc To PDF','setDocToPdfConversion')
       .addItem('Doc To Doc','setDocToDocConversion')
@@ -76,8 +85,76 @@ function onOpen() {
       .addItem('Slide To PDF','setSlideToPdfConversion')
       .addItem('Sheet To Sheet', 'setSheetToSheetConversion')
       .addItem('Sheet To PDF', 'setSheetToPdfConversion')
-      )
+    )
     .addToUi();
+}
+
+function setEmailBlank() { addRowBlank(SUPPORTED_TYPE.EMAIL); }
+function setDocToPdfBlank() { addRowBlank(SUPPORTED_TYPE.DOC_TO_PDF); }
+function setDocToDocBlank() { addRowBlank(SUPPORTED_TYPE.DOC_TO_DOC); }
+function setSlideToSlideBlank() { addRowBlank(SUPPORTED_TYPE.SLIDE_TO_SLIDE); }
+function setSlideToPdfBlank() { addRowBlank(SUPPORTED_TYPE.SLIDE_TO_PDF); }
+function setSheetToSheetBlank() { addRowBlank(SUPPORTED_TYPE.SHEET_TO_SHEET); }
+function setSheetToPdfBlank() { addRowBlank(SUPPORTED_TYPE.SHEET_TO_PDF); }
+
+function addRowBlank(type) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+
+  for (var j = 1; j < data.length; j++) {
+    if (data[j][1] == "") {
+      var lastRow = j
+      break;
+    }
+  }
+
+  var processName = "";
+  var templateUrl = "";
+
+  if (
+    type === SUPPORTED_TYPE.DOC_TO_DOC ||
+    type === SUPPORTED_TYPE.DOC_TO_PDF ||
+    type === SUPPORTED_TYPE.EMAIL
+  ) {
+    const newDoc = DocumentApp.create("Document Template");
+    DriveApp.getFileById(newDoc.getId()).moveTo(getProjectFolder());
+    if (type === SUPPORTED_TYPE.EMAIL) {
+      newDoc.getBody().setMarginBottom(0);
+      newDoc.getBody().setMarginLeft(0);
+      newDoc.getBody().setMarginRight(0);
+      newDoc.getBody().setMarginTop(0);
+    }
+
+    processName = "Document Process";
+    templateUrl = newDoc.getUrl();
+  } else if (
+    type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
+    type === SUPPORTED_TYPE.SLIDE_TO_PDF
+  ) {
+    const file = SlidesApp.create("Slide Template");
+    DriveApp.getFileById(file.getId()).moveTo(getProjectFolder());
+    processName = "Slide Process";
+    templateUrl = file.getUrl();
+  } else if (
+    type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
+    type === SUPPORTED_TYPE.SHEET_TO_PDF
+  ) {
+    const file = SpreadsheetApp.create("Sheet Template");
+    DriveApp.getFileById(file.getId()).moveTo(getProjectFolder());
+    processName = "Sheet Process";
+    templateUrl = file.getUrl();
+  }
+  
+  var inputs = [];
+
+  inputs[SETUP_MAIN_COLUMN.indexOf("Name")] = processName;
+  inputs[SETUP_MAIN_COLUMN.indexOf("Type")] = type;
+  inputs[SETUP_MAIN_COLUMN.indexOf("TemplateUrl")] = templateUrl;
+  if (type !== SUPPORTED_TYPE.EMAIL) {
+    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getProjectFolder().getUrl();
+  }
+
+  sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
 }
 
 function setEmailConversion() { addRowConversion(SUPPORTED_TYPE.EMAIL); }
@@ -193,7 +270,10 @@ function reload() {
     ) {
       if (
         disableRow(
-          !cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/")
+          !(
+            cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/") ||
+            cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/open?id=")
+          )
         , row, "'Template Link' contains an invalid Google Docs link.")
       ) {
         continue;
@@ -436,29 +516,35 @@ function onSlideTrigger(e) {
   const copy = gSlidesTemplate.makeCopy("[FORM-MATION | PROCESSING] " + cpDataObj.Name, destinationFolder);
   const slides = SlidesApp.openById(copy.getId());
 
-  slides.getSlides().forEach(function(slide) {
-    var shapes = (slide.getShapes());
-    shapes.forEach(function(shape) {
-      for (var j = 0; j < cpDataObj.Variables.length; j++) {
-        const variableName = cpDataObj.Variables[j];
-        const replacementData = formResponseData[j];
-        Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
-        if (
-          variableName.startsWith("IMG") && 
-          replacementData.toString().length > 30 && 
-          fileExist(replacementData) &&
-          shape.getText().asString().startsWith(VAR_PREFIX + "IMG")
-        ) {
-          var image = DriveApp.getFileById(replacementData).getBlob();
-          shape.replaceWithImage(image);
-          continue;
-        }
+  try {
+    slides.getSlides().forEach(function(slide) {
+      var shapes = (slide.getShapes());
 
-        shape.getText().replaceAllText(VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
-        outputFileName = strReplaceAll(outputFileName, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
-      }
-    }); 
-  });
+      shapes.forEach(function(shape) {
+        for (var j = 0; j < cpDataObj.Variables.length; j++) {
+          const variableName = cpDataObj.Variables[j];
+          const replacementData = formResponseData[j];
+
+          if (
+            variableName.startsWith("IMG") && 
+            shape.getText().asString().toString().startsWith(VAR_PREFIX + variableName) &&
+            replacementData.toString().length > 30 && 
+            fileExist(replacementData)
+          ) {
+            Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
+            var image = DriveApp.getFileById(replacementData).getBlob();
+            shape.replaceWithImage(image);
+            continue;
+          }
+
+          shape.getText().replaceAllText(VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
+          outputFileName = strReplaceAll(outputFileName, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
+        }
+      }); 
+    });
+  } catch (err) {
+    console.log(`Slides replace with image err: ${err}`);
+  }
 
   slides.setName(outputFileName);  
   slides.saveAndClose();
@@ -473,8 +559,6 @@ function onSlideTrigger(e) {
 }
 
 function onDocTrigger(e) {
-  // e = {"authMode":"FULL","response":{},"source":{ "triggerUid":"-2540183388906956469"}
-
   // get form by triggerUid
   const gFormId = getFileByTriggerId(e.triggerUid);
   // Retrieve submitted form data
@@ -551,8 +635,6 @@ var replaceTextToImage = function(body, searchText, image, width) {
 };
 
 function onEmailTrigger(e) {
-  // e = {"authMode":"FULL","response":{},"source":{},"triggerUid":"-2540183388906956469"}
-
   // get form by triggerUid
   const gFormId = getFileByTriggerId(e.triggerUid);
   // Retrieve submitted form data
@@ -788,9 +870,6 @@ function getDocsUniqueVariables(cpDataObj) {
   const doc = DocumentApp.openByUrl(cpDataObj.TemplateUrl);
   const body = doc.getBody();
 
-  // var variables = body.getText().match(/(?<=\{).+?(?=\})/g);
-  // const docNameVariables = doc.getName().match(/(?<=\{).+?(?=\})/g);
-
   var variables = body.getText().match(uvRegex);
   const docNameVariables = doc.getName().match(uvRegex);
 
@@ -907,11 +986,15 @@ function getProjectFolder() {
   return folder.next();
 }
 
-function generateGoogleForms(cpDataObj, uVariables) {
-  const newForm = FormApp.create(cpDataObj.Name);
-  DriveApp.getFileById(newForm.getId()).moveTo(getProjectFolder());
-  
-  const form = FormApp.openById(newForm.getId());
+function generateGoogleForms(cpDataObj, uVariables, existingFormUrl = undefined) {
+  var form;
+  if (existingFormUrl) {
+    form = FormApp.openByUrl(existingFormUrl);
+  } else {
+    const newForm = FormApp.create(cpDataObj.Name);
+    DriveApp.getFileById(newForm.getId()).moveTo(getProjectFolder());
+    form = FormApp.openById(newForm.getId());
+  }
 
   uVariables.forEach(function(variable) {
     const formItem = form.addParagraphTextItem();

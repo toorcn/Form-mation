@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 3.5
-  Last Modified: 16 August 2024 12:40AM GMT+8
+  Version: 3.6
+  Last Modified: 16 August 2024 1:15AM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
@@ -246,7 +246,7 @@ function reload() {
   var row = 1;
   for (var i = 0; i < controlPanelSetups.length; i++) {
     row++;
-    const cpSetupObj = controlPanelSetups[i];
+    var cpSetupObj = controlPanelSetups[i];
 
     // remove hyperlink to publish URL of Name
     SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("Name")+1).setValue(cpSetupObj.Name);
@@ -301,6 +301,14 @@ function reload() {
         // update cpSetupObj for the remainder of this process
         cpSetupObj.GFormUrl = newGFormLink;
         cpSetupObj.Variables = uVariables;
+      } else {
+        // update control panel and form items of new variables found in template
+        cpSetupObj = updateVariablesFromTemplate(cpSetupObj, row);
+        // update form confirmation message with newest GDriveOutputUrl
+        if (cpSetupObj.Type !== SUPPORTED_TYPE.EMAIL) {
+          const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
+          form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpSetupObj.GDriveOutputUrl);
+        }
       }
     } else if (
       cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
@@ -428,6 +436,67 @@ function updateNameWithFormPushlishedUrl(cpSetupObj, row) {
   const formPublishedUrl = form.getPublishedUrl();
   const newValue = `=HYPERLINK("${formPublishedUrl}", "${cpSetupObj.Name}")`;
   SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("Name")+1).setValue(newValue);
+}
+
+function updateVariablesFromTemplate(cpSetupObj, row) {
+  var uVariables = [];
+  // get all unique variables and check to CP
+  if (
+    cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC ||
+    cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
+    cpSetupObj.Type === SUPPORTED_TYPE.EMAIL
+  ) {
+    uVariables = getDocsUniqueVariables(cpSetupObj);
+  } else if (
+    cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
+    cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF
+  ) {
+    uVariables = getSlidesUniqueVariables(cpSetupObj);
+  } else if (
+    cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
+    cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF
+  ) {
+    uVariables = getSheetsUniqueVariables(cpSetupObj);
+  }
+
+  var newVars = [];
+  // get all CP variables and check with form
+  uVariables.forEach(function (v) {
+    const hasVar = cpSetupObj.Variables.includes(v);
+    if (!hasVar) {
+      newVars.push(v);
+      cpSetupObj.Variables.push(v);
+    }
+  });
+  if (newVars.length > 0) {
+    addVariablesToCP(row, cpSetupObj.Variables);
+    const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
+    
+    // update form with new items
+    newVars.forEach(function (variable) {
+      const formItem = form.addParagraphTextItem();
+      formItem.setRequired(true);
+      if (
+        variable.startsWith("IMG") &&
+        variable.includes("_")
+      ) {
+        const varDisplayName = variable.substring(variable.indexOf('_') + 1);
+        formItem.setTitle(varDisplayName);
+        formItem.setHelpText("[CHANGE THIS TO 'File upload' TYPE -> 'Allow only specific file types' -> 'Image']")
+        return;
+      }
+      formItem.setTitle(variable);
+      console.log({formInd: formItem.getIndex()});
+    });
+
+    // for if existing form has attachment items, move new item to before attachement items
+    if (cpSetupObj.Type === SUPPORTED_TYPE.EMAIL) {
+      const formItems = form.getItems();
+      form.moveItem(formItems.length - 1, cpSetupObj.Variables.length - 1);
+    }
+  }
+
+  return cpSetupObj;
 }
 
 function createTrigger(cpSetupObj, funcName) {

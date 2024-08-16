@@ -6,6 +6,7 @@
     <style>      
       body {
         height: 100vh;
+        margin: 0;
         font-family: 'Open Sans';
         height: fit-content;
         display: grid;
@@ -138,6 +139,7 @@
         gap: 5px;
       }
       #type, #description{
+        font-family: 'Open Sans';
         padding: 5px;
       }
       option{
@@ -173,6 +175,11 @@
 
       .submit:hover{
         background-color: #3045BD;
+      }
+
+      textarea {
+        resize: none;
+        overflow: hidden;
       }
     </style>
     <script>
@@ -211,7 +218,7 @@
 
         <div class="main-content-sections">
           <label for="description">Purpose of Template :</label>
-          <input name="description" type="text" id="description" placeholder="Briefly describe your template (ex. Product Inquiry)" autofocus required/>
+          <textarea rows="1" name="description" id="description" placeholder="Briefly describe your template (ex. Product Inquiry)" autofocus required></textarea>
         </div>
 
         <input class="submit" type="submit" value="✨ Generate" onclick="onSubmit()" />
@@ -248,6 +255,15 @@
       window.onload = function() {
         document.getElementById('description').focus();
       }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        const textarea = document.getElementById('description');
+
+        textarea.addEventListener('input', function() {
+          this.style.height = 'auto'; // Reset the height
+          this.style.height = (this.scrollHeight - 10) + 'px'; // Set the height to the scroll height
+        });
+      });
     </script> 
   </body>
 </html>

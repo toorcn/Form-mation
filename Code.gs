@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 3.6
-  Last Modified: 16 August 2024 1:15AM GMT+8
+  Version: 4.0
+  Last Modified: 17 August 2024 12:15AM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
@@ -13,6 +13,9 @@ const SETUP_MAIN_COLUMN = [
 ];
 
 const PROJECT_FOLDER_NAME = "Form-mation";
+const PROPERTY_GEMINI_API_KEY = "GEMINI_API_KEY";
+const PROPERTY_ACTIVITY_LOG = "ACTIVITY_LOG";
+const LATEST_ACTIVITY_LOG_COUNT = 50;
 
 const VAR_PREFIX = "{{";
 const VAR_SUFFIX = "}}";
@@ -66,27 +69,33 @@ const uvRegex = new RegExp(patternString, 'g');
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Form-mation')
-    .addItem('Validate', 'reload')
+    .addItem('✔ Validate', 'reload')
+    .addItem('ℹ Information', 'openSidebar')
     .addSeparator()
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('New Blank Template')
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('📄 Create a Blank Process')
       .addItem('Email','setEmailBlank')
-      .addItem('Doc To PDF','setDocToPdfBlank')
       .addItem('Doc To Doc','setDocToDocBlank')
+      .addItem('Doc To PDF','setDocToPdfBlank')
       .addItem('Slide To Slide','setSlideToSlideBlank')
       .addItem('Slide To PDF','setSlideToPdfBlank')
       .addItem('Sheet To Sheet', 'setSheetToSheetBlank')
       .addItem('Sheet To PDF', 'setSheetToPdfBlank')
     )
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('New Sample Template')
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('💡 Create a Sample Process')
       .addItem('Email','setEmailConversion')
-      .addItem('Doc To PDF','setDocToPdfConversion')
       .addItem('Doc To Doc','setDocToDocConversion')
+      .addItem('Doc To PDF','setDocToPdfConversion')
       .addItem('Slide To Slide','setSlideToSlideConversion')
       .addItem('Slide To PDF','setSlideToPdfConversion')
       .addItem('Sheet To Sheet', 'setSheetToSheetConversion')
       .addItem('Sheet To PDF', 'setSheetToPdfConversion')
     )
-    .addToUi();
+    .addItem('✨ Create Process with Gemini', 'openGeminiPrompt')
+    .addSeparator()
+    .addItem('🗨 Help Form-mation improve', 'helpFormmation')
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('⚙ Settings')
+      .addItem('Gemini API Key', 'openGeminiKeyPrompt')
+    ).addToUi();
 }
 
 function setEmailBlank() { addRowBlank(SUPPORTED_TYPE.EMAIL); }
@@ -196,12 +205,16 @@ function getKeyByValue(object, value) {
   return Object.keys(object).find(key => object[key] === value);
 }
 
+function helpFormmation() {
+  var ui = HtmlService.createHtmlOutputFromFile('feedback-page')
+    .setHeight(500)
+    .setWidth(500);
+  SpreadsheetApp.getUi().showModelessDialog(ui, "Help Form-mation improve");
+}
+
 function onEdit(e) {
   const range = e.range;
   range.clearNote();
-  if (range.getColumn() === 1) {
-    range.setNote('Last modified: ' + new Date() + "\n\nRemember to Reload!");
-  }
 }
 
 function disableRow(boolean, row, noteMsg) {
@@ -240,8 +253,10 @@ function getControlPanelSetups() {
 function reload() {
   deleteAllTrigger();
 
+  var errorMsgs = [];
+  var errorMsg = "";
+
   var controlPanelSetups = getControlPanelSetups();
-  // console.log({controlPanelSetups});
 
   var row = 1;
   for (var i = 0; i < controlPanelSetups.length; i++) {
@@ -255,27 +270,33 @@ function reload() {
     if (!cpSetupObj.Enabled) continue;
 
     // if row has no type, name, or template, will disable row
+    errorMsg = "'Name', 'Type', and 'Template Link' is required!";
     if (
       disableRow(
         (!cpSetupObj.Name || cpSetupObj.Name == "") ||
         (!cpSetupObj.Type || cpSetupObj.Type == "") || 
         (!cpSetupObj.TemplateUrl || cpSetupObj.TemplateUrl == "")
-      , row, "'Name', 'Type', and 'Template Link' is required!")
-    ) continue;
+      , row, errorMsg)
+    ) {
+      errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+      continue;
+    };
 
     if (
       cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC ||
       cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
       cpSetupObj.Type === SUPPORTED_TYPE.EMAIL
     ) {
+      errorMsg = "'Template Link' contains an invalid Google Docs link.";
       if (
         disableRow(
           !(
             cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/") ||
             cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/open?id=")
           )
-        , row, "'Template Link' contains an invalid Google Docs link.")
+        , row, errorMsg)
       ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
         continue;
       }
       // check if row does not have GFormUrl and Variables filled
@@ -314,11 +335,13 @@ function reload() {
       cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
       cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF
     ) {
+      errorMsg = "'Template Link' contains an invalid Google Slides link.";
       if (
         disableRow(
           !cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/presentation/d/")
-        , row, "'Template Link' contains an invalid Google Slides link.")
+        , row, errorMsg)
       ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
         continue;
       }
       // check if row does not have GFormUrl and Variables filled
@@ -341,11 +364,13 @@ function reload() {
       cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
       cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF
     ) {
+      errorMsg = "'Template Link' contains an invalid Google Sheets link.";
       if (
         disableRow(
           !cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/spreadsheets/d/")
-        , row, "'Template Link' contains an invalid Google Sheets link.")
+        , row, errorMsg)
       ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
         continue;
       }
       // check if row does not have GFormUrl and Variables filled
@@ -367,41 +392,57 @@ function reload() {
     }
 
     // if row does not have GFormUrl, will disable row
+    errorMsg = "'Google Forms Link' is required!";
     if (
       disableRow(
         (!cpSetupObj.GFormUrl || cpSetupObj.GFormUrl == "")
-      , row, "'Google Forms Link' is required!")
-    ) continue;
+      , row, errorMsg)
+    ) {
+      errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+      continue;
+    }
 
+    errorMsg = "'Google Forms Link' contains an invalid Google Forms link.";
     if (
       disableRow(
         !cpSetupObj.GFormUrl.startsWith("https://docs.google.com/forms/d/")
-      , row, "'Google Forms Link' contains an invalid Google Forms link.")
+      , row, errorMsg)
     ) {
+      errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
       continue;
     }
 
     if (cpSetupObj.Type === SUPPORTED_TYPE.EMAIL) {
       // if row does not have "EMAIL" as first variable, will disable row
+      errorMsg = "For Type 'Email', the first variable in the Control Panel must be 'EMAIL'.";
       if (
         disableRow(
           (!cpSetupObj.Variables[0] || cpSetupObj.Variables[0] != "EMAIL")
-        , row, "For Type 'Email', the first variable in the Control Panel must be 'EMAIL'.")
-      ) continue;
+        , row, errorMsg)
+      ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        continue;
+      }
       createTrigger(cpSetupObj, "onEmailTrigger");
     } else {
       // if row does not have Output GDrive Link, will disable row
+      errorMsg = "'Google Drive Folder Link' is required!";
       if (
         disableRow(
           (!cpSetupObj.GDriveOutputUrl || cpSetupObj.GDriveOutputUrl == "")
-        , row, "'Google Drive Folder Link' is required!")
-      ) continue;
+        , row, errorMsg)
+      ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        continue;
+      }
 
+      errorMsg = "'Google Drive Folder Link' contains an invalid Google Drive folder link.";
       if (
         disableRow(
           !cpSetupObj.GDriveOutputUrl.startsWith("https://drive.google.com/drive/folders/")
-        , row, "'Google Drive Folder Link' contains an invalid Google Drive folder link.")
+        , row, errorMsg)
       ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
         continue;
       }
 
@@ -429,6 +470,19 @@ function reload() {
     // acknowledge successful setups
     SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("Enabled")+1).setNote('Setup Successful!\nAcknowledgement time: ' + new Date());
   }
+
+  if (errorMsgs.length > 0) {
+    SpreadsheetApp.flush();
+    const ui = SpreadsheetApp.getUi();
+    var alertMsg = "";
+    errorMsgs.forEach(function ({ message, row, name }, index) {
+      alertMsg += `${index + 1}. Process '${name}' on row ${row}
+      Information: ${message}\n\n`;
+    })
+    ui.alert("Validation Issues Detected", `These process are currently disabled due to an error. Hover over the 'Enabled' cell of the error causing process for more information. Resolve the underlying issue, re-enable the process, and re-validate.\n\n` + alertMsg, ui.ButtonSet.OK);
+  }
+
+  newActivityLog(`Ran validation.`);
 }
 
 function updateNameWithFormPushlishedUrl(cpSetupObj, row) {
@@ -494,6 +548,7 @@ function updateVariablesFromTemplate(cpSetupObj, row) {
       const formItems = form.getItems();
       form.moveItem(formItems.length - 1, cpSetupObj.Variables.length - 1);
     }
+    newActivityLog(`Found new placeholder and updated for process '${cpSetupObj.Name}'.`);
   }
 
   return cpSetupObj;
@@ -563,6 +618,7 @@ function onSheetTrigger(e) {
     const sheetsFile = DriveApp.getFileById(sheets.getId());
     sheetsFile.setTrashed(true);
   }
+  newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
 
 function onSlideTrigger(e) {
@@ -625,6 +681,7 @@ function onSlideTrigger(e) {
     const slidesFile = DriveApp.getFileById(slides.getId());
     slidesFile.setTrashed(true);
   }
+  newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
 
 function onDocTrigger(e) {
@@ -678,6 +735,7 @@ function onDocTrigger(e) {
     const docFile = DriveApp.getFileById(doc.getId()); // Get the temporary Google Docs file.
     docFile.setTrashed(true); // Trash the temporary Google Docs file.
   }
+  newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
 
 function convertToPdf_(doc, folder) {
@@ -771,6 +829,7 @@ function onEmailTrigger(e) {
     inlineImages: inlineImages,
     attachments: attachmentFiles
   });
+  newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
 
 function fileExist(fileId) {
@@ -848,9 +907,6 @@ function getEmails(emailStr) {
 }
 
 function parseIMGVarName(varName) {
-  // const varName = "IMG-300_G1";
-  // const varName = "IMG-S_G2";
-
   var widthPX = 150; // default size for S
   var width = varName.match(/(?<=\-).+?(?=\_)/g)[0]; // getting first value between "-" and "_"
   width = width.toUpperCase();
@@ -1087,5 +1143,245 @@ function generateGoogleForms(cpDataObj, uVariables, existingFormUrl = undefined)
     form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpDataObj.GDriveOutputUrl);
   }
 
+  newActivityLog(`Auto retrieved placeholders and generated Google Forms for process '${cpDataObj.Name}'.`);
   return form.getEditUrl();
+}
+
+function newActivityLog(activity) {
+  var date = (new Date).toLocaleString();
+
+  var propValue = PropertiesService.getScriptProperties().getProperty(PROPERTY_ACTIVITY_LOG);
+  if (propValue) {
+    propValue = JSON.parse(propValue);
+
+    propValue.push({ date, activity });
+
+    propValue.sort((a, b) => {
+      return new Date(b.date) - new Date(a.date);
+    });
+
+    propValue = propValue.slice(0, LATEST_ACTIVITY_LOG_COUNT);
+  } else propValue = [{ date, activity }];
+
+  PropertiesService.getScriptProperties().setProperty(PROPERTY_ACTIVITY_LOG, JSON.stringify(propValue));
+}
+
+/*
+  Sidebar
+*/
+
+function openSidebar() {
+  var ui = HtmlService.createTemplateFromFile('sidebar.html')
+    .evaluate()
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME)
+    .setTitle('Form-mation Information');
+  
+  SpreadsheetApp.getUi().showSidebar(ui);
+}
+
+function getCurrentDate() { return new Date().toUTCString(); }
+function getEmailQuota() { return MailApp.getRemainingDailyQuota(); }
+function getActivityHistory() {
+  var value = PropertiesService.getScriptProperties().getProperty(PROPERTY_ACTIVITY_LOG);
+  if (value) value = JSON.parse(value);
+  else value = [];
+
+  var output = value.map(({ date, activity }) => `<li><p class="activity-date">${date}</p><p class="activity-details">${activity}</p></li>`).join("");
+
+  console.log({output})
+  return output;
+}
+
+/*
+  Gemini Integration
+*/
+
+function openGeminiKeyPrompt() {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const response = SpreadsheetApp.getUi().prompt(`Key (${scriptProperties.getProperty(PROPERTY_GEMINI_API_KEY)})\n\nTo remove your Gemini API Key, enter 'UNSET'.`)
+  const responseText = response.getResponseText();
+  const responseButton = response.getSelectedButton();
+  if (responseButton == "CLOSE") return;
+  if (!responseText) {
+    SpreadsheetApp.getUi().alert("Gemini API Key can not be empty!\n\nGet your Gemini API Key here: https://aistudio.google.com/app/apikey\nIt looks something like this: 'AIz124CrPasyiPTVcZxsr-dinuertTw-P229bQc'");
+    return;
+  }
+  if (responseText.length != 39) {
+    if (responseText == 'UNSET') {
+      scriptProperties.deleteProperty(PROPERTY_GEMINI_API_KEY);
+      SpreadsheetApp.getUi().alert("Your Gemini API Key is removed!");
+      return;
+    }
+    SpreadsheetApp.getUi().alert("Gemini API Key is invalid!\n\nGet your Gemini API Key here: https://aistudio.google.com/app/apikey\nIt looks something like this: 'AIz124CrPasyiPTVcZxsr-dinuertTw-P229bQc'");
+    return;    
+  }
+  scriptProperties.setProperty(PROPERTY_GEMINI_API_KEY, responseText);
+  return true;
+}
+
+const properties = PropertiesService.getScriptProperties().getProperties();
+const geminiApiKey = properties[PROPERTY_GEMINI_API_KEY];
+const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro-latest:generateContent?key=${geminiApiKey}`;
+
+function openGeminiPrompt(hasKey=false) {
+  if (!geminiApiKey && !hasKey) {
+    const response = openGeminiKeyPrompt();
+    if (response) openGeminiPrompt(true);
+    return;
+  }
+
+  var ui = HtmlService.createTemplateFromFile('gemini-input')
+    .evaluate()
+    .setHeight(250)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+  
+  SpreadsheetApp.getUi().showModalDialog(ui, 'Create with Gemini (Form-mation Process)');
+}
+
+function runGemini(selectedType, textDescription, rerun = 0) {
+  var prePrompt = `Create a document template with a hard maximum of 5 placeholders in total within the template content surrounded by double curly brackets ({{ }}) with no space between the placeholder and curly brackets. The template should adhere to the specified template type and accurately reflect the provided description. For the template body, if formatting is included, for bold it should be surrounded by double asterisk (** **) and for underline it should be surrounded by double underscore (__ __). Alongside the template, generate (a suitable file name without extensions and file name with spaces are preferred OR if it's for type of email, generate a suitable subject title both of which accepts placeholders as well) and process label name based on the description provided.
+
+Structure the output as follows:
+<TEMPLATE> [Insert template content here] <TEMPLATE>
+<FILENAME> [Suggested file name] <FILENAME>
+<SUBJECT> [Suggested email subject] <SUBJECT>
+<PROCESSNAME> [Suggested process name] <PROCESSNAME>`;
+
+  if (rerun > 0 && rerun < 5) {
+    Logger.log({rerun});
+    prePrompt = prePrompt + " It seems like the previous generation output did not satisfy the requirements which were specified especially the ones which are mentioned to surround, ensure that does not occur this time.";
+  }
+
+  const prompt = `${prePrompt} Type: "${selectedType}", Description: "${textDescription}"`;
+  const output = callGemini(prompt);
+  Logger.log({selectedType, textDescription, rerun})
+  Logger.log({output});
+
+  try {
+    var processName = output.match(/(?<=\<PROCESSNAME> ).+?(?=\ <PROCESSNAME>)/g);
+    var fileName = output.match(/(?<=\<FILENAME> ).+?(?=\ <FILENAME>)/g);
+    var subjectTitle = output.match(/(?<=\<SUBJECT> ).+?(?=\ <SUBJECT>)/g);
+    var templateContent = output.match(/(?<=\<TEMPLATE> <TEMPLATE>).*(?=\<TEMPLATE> <TEMPLATE>)/s);
+    if (!processName) {
+      processName = output.match(/(?<=\<PROCESSNAME> ).+?(?=\ <\/PROCESSNAME>)/g)[0];
+    } else {
+      processName = processName[0];
+    }
+    if (!fileName) {
+      fileName = output.match(/(?<=\<FILENAME> ).+?(?=\ <\/FILENAME>)/g)[0];
+    } else {
+      fileName = fileName[0];
+    }
+    if (!subjectTitle) {
+      subjectTitle = output.match(/(?<=\<SUBJECT> ).+?(?=\ <\/SUBJECT>)/g)[0];
+    } else {
+      if (!subjectTitle.includes("Not Applicable")) {
+        fileName = subjectTitle[0];
+      }
+    }
+    if (!templateContent) {
+      templateContent = output.match(/(?<=\<TEMPLATE>).*(?=\<\/TEMPLATE>)/s);
+      if (!templateContent) templateContent = output.match(/(?<=\<TEMPLATE>).*(?=\<TEMPLATE>)/s)[0];
+      else templateContent = templateContent[0];
+    } else {
+      templateContent = templateContent[0];
+    }
+    templateContent = templateContent.toString().trim();
+  } catch (e) {
+    return runGemini(selectedType, textDescription, rerun++);
+  }
+  // Logger.log({processName, fileName, templateContent});
+
+  if (
+    selectedType === SUPPORTED_TYPE.DOC_TO_DOC ||
+    selectedType === SUPPORTED_TYPE.DOC_TO_PDF ||
+    selectedType === SUPPORTED_TYPE.EMAIL
+  ) {
+    const doc = DocumentApp.create(fileName);
+    const docId = doc.getId();
+    DriveApp.getFileById(docId).moveTo(getProjectFolder());
+
+    if (selectedType === SUPPORTED_TYPE.EMAIL) {
+      doc.getBody().setMarginBottom(0);
+      doc.getBody().setMarginLeft(0);
+      doc.getBody().setMarginRight(0);
+      doc.getBody().setMarginTop(0);
+    }
+
+    doc.getBody().setText(templateContent);
+
+    // Document Formatting
+    var underlineText = templateContent.match(/(?<=\_\_).+?(?=\_\_)/g);
+    if (underlineText) {
+      for (var i = 0; i < underlineText.length; i++) {
+        const text = underlineText[i];
+        // const textElement = doc.getBody().findText(text).getElement();
+        // textElement.asText().setUnderline(true);
+        doc.getBody().replaceText("__" + text + "__", text);
+      }
+    }
+    var boldText = templateContent.match(/(?<=\*\*).+?(?=\*\*)/g);
+    if (boldText) {
+      for (var i = 0; i < boldText.length; i++) {
+        const text = boldText[i];
+        const textElement = doc.getBody().findText(text).getElement();
+        textElement.asText().setBold(true);
+        doc.getBody().replaceText("\\*\\*" + text + "\\*\\*", text);
+      }
+    }
+
+    geminiInsert(selectedType, processName, doc.getUrl());
+    return doc.getUrl();
+  }
+}
+
+function callGemini(prompt, temperature=0.5) {
+  const payload = {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": prompt
+          },
+        ]
+      }
+    ], 
+    "generationConfig":  {
+      "temperature": temperature,
+    },
+  };
+
+  const options = { 
+    'method' : 'post',
+    'contentType': 'application/json',
+    'payload': JSON.stringify(payload)
+  };
+
+  const response = UrlFetchApp.fetch(geminiEndpoint, options);
+  const data = JSON.parse(response);
+  const content = data["candidates"][0]["content"]["parts"][0]["text"];
+  return content;
+}
+
+function geminiInsert(type, name, templateUrl) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+
+  for (var j = 1; j < data.length; j++) {
+    if (data[j][1] == "") {
+      var lastRow = j
+      break;
+    }
+  }
+
+  var inputs = [];
+
+  inputs[SETUP_MAIN_COLUMN.indexOf("Name")] = name;
+  inputs[SETUP_MAIN_COLUMN.indexOf("Type")] = type;
+  inputs[SETUP_MAIN_COLUMN.indexOf("TemplateUrl")] = templateUrl;
+  if (type !== SUPPORTED_TYPE.EMAIL) {
+    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getProjectFolder().getUrl();
+  }
+
+  sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
 }

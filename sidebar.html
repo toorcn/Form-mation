@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,300" rel="stylesheet" type="text/css">
+  </head>
+  <style>
+    body{
+      font-family:Open Sans;
+      margin:0;
+    }
+    .quota, .usage, .history {
+      padding-left:15px;
+    }
+    .usage-list{
+      list-style:none;
+      padding:0;
+      margin: 0 15px;
+    }
+    .usage-list li{
+      background-color:#f2f2f2;
+      border-bottom: 1px #ccc solid;
+    }
+    .usage-list li:first:child{
+      border-top: 1px #ccc solid;
+    }
+    .question{
+      display:flex;
+      align-items: center;
+      padding: 10px 0;
+      border-left: 5px #f2f2f2 solid;
+      cursor:pointer;
+      transition: 0.3s;
+    }
+    .question h5{
+      margin: 0 15px;
+    }
+    .question:focus, .question:hover, .question:hover .arrow{
+      border-left-color: #4056F4;
+    }
+    .arrow{
+      margin: 0 0.5rem;
+      width: 0;
+      height: 0;
+      border-top: 6px solid transparent;
+      border-left: 10px solid #555;
+      border-bottom: 6px solid transparent;
+      transition:0.3s;
+    }
+    .arrow-rotated{
+      transform: rotate(90deg);
+    }
+    .answer{
+      overflow:hidden;
+      height:0;
+      transition:0.3s;
+    }
+    .answer p{
+      line-height:20px;
+      font-size:14px;
+    }
+    .answer div{
+      padding:3px;
+      line-height:5px;
+    }
+    .answer-opened{
+      padding: 0 10px;
+      height:initial;
+    }
+    .activity-log{
+      background-color:#f2f2f2;
+      height:50dvh;
+      margin: 0 15px;
+      padding:0 15px;
+      overflow-y:scroll;
+      list-style:none;
+
+      li{
+        position: relative;
+        padding-bottom: 20px;
+        padding-left: 20px;
+        padding-right: 10px;
+        border-bottom: 1px #ccc solid;
+
+        &::after {
+          content: "";
+          display: block;
+          position: absolute;
+          top: 3px;
+          left: -5px;
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: #fff;
+          border: 2px solid #4056F4;
+        }
+      }
+      li:last-child{
+        border-bottom:none;
+      }
+      .activity-date{
+        margin-bottom: -10px;
+        font-size:12px;
+      }
+      .activity-details{
+        font-size: 16px;
+      }
+
+    }
+    .activity-log::-webkit-scrollbar{
+      width: 5px;
+    }
+    .activity-log::-webkit-scrollbar-track {
+      background-color: #dedede; 
+    }
+    .activity-log::-webkit-scrollbar-thumb {
+      border-top: 3px solid #dedede;
+      border-bottom: 3px solid #dedede;
+      background: #888; 
+    }
+    .activity-log::-webkit-scrollbar-thumb:hover {
+      background: #555; 
+    }
+  </style>
+
+  <body>
+    <p><i style="font-size:10px;display:flex;justify-content:center;">Information as of <?= getCurrentDate() ?></i></p>
+
+    <h4 class="quota">Quota Remaining</h4>
+    <p style="padding:0 25px;">Email : <?= getEmailQuota() ?></p>
+
+    <h4 class="usage">Usage Information</h4>
+    <ul class="usage-list">
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <h5>Text Placeholder</h5>
+        </div>
+        <div class="answer">
+          <div>
+            <h5>Format</h5>
+            <p>{{[PLACEHOLDER NAME]}}</p>
+          </div>
+          <div>
+            <h5>Example</h5>
+            <p>{{Project Name}} or {{date}}</p>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <h5>Placeholder Image (Email, Doc-to-Doc, Doc-to-PDF)</h5>
+        </div>
+        <div class="answer">
+          <div>
+            <h5>Format</h5>
+            <p>{{IMG-[S/M/L/Pixel Width]_[name]}}</p>
+          </div>
+          <div>
+            <h5>Example</h5>
+            <p>{{IMG-M_population}} or {{IMG-600_sales}}</p>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <h5>Placeholder Image (Slide-to-Slide, Slide-to-PDF)</h5>
+        </div>
+        <div class="answer">
+          <div>
+            <h5>Format</h5>
+            <p>{{IMG_[name]}}</p>
+          </div>
+          <div>
+            <h5>Example</h5>
+            <p>{{IMG_Company Logo}}</p>
+          </div>
+          <p style="font-size:12px;padding:3px;">Note : The size of the image is only determined/limited by the size of the text box the placeholder belongs to (the image placeholder text must be at the start of the text box and any other text in the textbox is not maintained as the image replaces the whole text box)</p>
+        </div>
+      </li>
+    </ul>
+
+    <h4 class="history">Activity History</h4>
+    <ul class="activity-log">
+      <?!= getActivityHistory() ?>
+    </ul>
+
+  </body>
+
+  <script>
+    const question = document.querySelectorAll('.question'),
+    answer = document.querySelectorAll('.answer'),
+    arrow = document.querySelectorAll('.arrow');
+
+    //Select all question elements
+    for(let i = 0; i < question.length; i++){
+      //Add click event
+      question[i].addEventListener('click', () => {
+        //Open the answer element
+        answer[i].classList.toggle('answer-opened');
+        //Rotate the arrow element
+        arrow[i].classList.toggle('arrow-rotated');
+      });
+    }
+  </script>
+</html>

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,300" rel="stylesheet" type="text/css">
+    <style>      
+      body {
+        height: 100vh;
+        font-family: 'Open Sans';
+        height: fit-content;
+        display: grid;
+        place-items: center;
+        transition:
+          background-color var(--trans-dur),
+          color var(--trans-dur);
+      }
+
+      /* Throbber */
+      :root {
+        --hue: 223;
+        --bg: hsl(var(--hue),10%,90%);
+        --fg: hsl(var(--hue),10%,10%);
+        --trans-dur: 0.3s;
+        font-size: calc(16px + (24 - 16) * (100vw - 320px) / (1280 - 320));
+      }
+      .pl {
+        display: block;
+        width: 8em;
+        height: 8em;
+      }
+      .pl__ring,
+      .pl__ball1,
+      .pl__ball2 {
+        animation-duration: 2s;
+        animation-timing-function: ease-in-out;
+        animation-iteration-count: infinite;
+        transform-origin: 32px 32px;
+      }
+      .pl__ring {
+        animation-name: ring;
+      }
+      .pl__ball1 {
+        animation-name: ball1;
+      }
+      .pl__ball2 {
+        animation-name: ball2;
+      }
+
+      /* Dark theme  */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: hsl(var(--hue),10%,10%);
+          --fg: hsl(var(--hue),10%,90%);
+        }
+      }
+
+      /* Animation */
+      @keyframes ring {
+        from {
+          animation-timing-function: ease-in-out;
+          stroke-dashoffset: -122.52;
+          transform: rotate(135deg);
+        }
+        15% {
+          animation-timing-function: ease-in;
+          stroke-dashoffset: -122.52;
+          transform: rotate(90deg);
+        }
+        35% {
+          animation-timing-function: ease-out;
+          stroke-dashoffset: -65.34;
+          transform: rotate(297.5deg);
+        }
+        55% {
+          animation-timing-function: ease-in-out;
+          stroke-dashoffset: -122.52;
+          transform: rotate(505deg);
+        }
+        70% {
+          animation-timing-function: ease-in-out;
+          stroke-dashoffset: -122.52;
+          transform: rotate(490deg);
+        }
+        85%,
+        to {
+          stroke-dashoffset: -122.52;
+          transform: rotate(497.5deg);
+        }
+      }
+      @keyframes ball1 {
+        from {
+          transform: rotate(14deg);
+        }
+        20% {
+          transform: rotate(-7deg);
+        }
+        60% {
+          transform: rotate(399deg);
+        }
+        75% {
+          transform: rotate(361deg);
+        }
+        90%,
+        to {
+          transform: rotate(374deg);
+        }
+      }
+      @keyframes ball2 {
+        from {
+          transform: rotate(-21deg);
+        }
+        25% {
+          transform: rotate(-47deg);
+        }
+        60% {
+          transform: rotate(364deg);
+        }
+        75% {
+          transform: rotate(326deg);
+        }
+        90%,
+        to {
+          transform: rotate(339deg);
+        }
+      }
+
+      #main-content{
+        display: flex;
+        flex-direction: column;
+        width: 80%;
+        /* padding:30px 0; */
+        /* gap: 30px; */
+        gap: 10px;
+      }
+      .main-content-sections{
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      #type, #description{
+        padding: 5px;
+      }
+      option{
+        font-size:14px;
+      }
+      .submit{
+        appearance: button;
+        backface-visibility: hidden;
+        background-color: #405cf5;
+        border-radius: 6px;
+        border-width: 0;
+        box-shadow: rgba(50, 50, 93, .1) 0 0 0 1px inset,rgba(50, 50, 93, .1) 0 2px 5px 0,rgba(0, 0, 0, .07) 0 1px 1px 0;
+        box-sizing: border-box;
+        color: #fff;
+        cursor: pointer;
+        font-size: 100%;
+        height: 44px;
+        line-height: 1.15;
+        margin: 12px 0 0;
+        outline: none;
+        overflow: hidden;
+        padding: 0 25px;
+        position: relative;
+        text-align: center;
+        text-transform: none;
+        transform: translateZ(0);
+        transition: all .2s,box-shadow .08s ease-in;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: manipulation;
+        width: 100%;
+      }
+
+      .submit:hover{
+        background-color: #3045BD;
+      }
+    </style>
+    <script>
+      function onSubmit() {
+        var selectedType = document.getElementById("type").value;
+        var textDescription = document.getElementById("description").value;
+        if (!(selectedType && textDescription)) {
+          return;
+        }
+
+        var form = document.getElementById("main-content");
+        var throbber = document.getElementById("throbber");
+
+        form.style.display = "none";
+        throbber.style.display = "flex";
+
+        google.script.run.withSuccessHandler(onSuccess).runGemini(selectedType, textDescription);
+      }
+
+      function onSuccess(result) {
+        google.script.host.close();
+      }
+    </script>
+  </head>
+  <body>
+    <div id="main-content">
+      <form action="" method="get">
+        <div class="main-content-sections">
+          <label for="type">Select a Process Type :</label>
+          <select name="type" id="type">
+            <option value="Email">Email</option>
+            <option value="Doc-to-Doc">Doc-to-Doc</option>
+            <option value="Doc-to-PDF">Doc-to-PDF</option>
+          </select>
+        </div>
+
+        <div class="main-content-sections">
+          <label for="description">Purpose of Template :</label>
+          <input name="description" type="text" id="description" placeholder="Briefly describe your template (ex. Product Inquiry)" autofocus required/>
+        </div>
+
+        <input class="submit" type="submit" value="✨ Generate" onclick="onSubmit()" />
+        <p><i style="font-size:10px;display:flex;justify-content:center;">Responses may display inaccurate or offensive information that doesn't represent our views.</i></p>
+      </form>
+    </div>
+    <div id="throbber" class="main-content-sections" style="height: 100vh; justify-content: center; margin: 0; display: none;">
+      <svg class="pl" viewBox="0 0 64 64" width="64px" height="64px" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#000" />
+          <stop offset="100%" stop-color="#fff" />
+        </linearGradient>
+        <mask id="grad-mask">
+          <rect x="0" y="0" width="64" height="64" fill="url(#grad)" />
+        </mask>
+      </defs>
+      <circle class="pl__ring" cx="32" cy="32" r="26" fill="none" stroke="hsl(223,90%,55%)" stroke-width="12" stroke-dasharray="169.65 169.65" stroke-dashoffset="-127.24" stroke-linecap="round" transform="rotate(135)" />
+      <g fill="hsl(223,90%,55%)">
+        <circle class="pl__ball1" cx="32" cy="45" r="6" transform="rotate(14)" />
+        <circle class="pl__ball2" cx="32" cy="48" r="3" transform="rotate(-21)" />
+      </g>
+      <g mask="url(#grad-mask)">
+        <circle class="pl__ring" cx="32" cy="32" r="26" fill="none" stroke="hsl(283,90%,55%)" stroke-width="12" stroke-dasharray="169.65 169.65" stroke-dashoffset="-127.24" stroke-linecap="round" transform="rotate(135)" />
+        <g fill="hsl(283,90%,55%)">
+          <circle class="pl__ball1" cx="32" cy="45" r="6" transform="rotate(14)" />
+          <circle class="pl__ball2" cx="32" cy="48" r="3" transform="rotate(-21)" />
+        </g>
+      </g>
+    </svg>
+    </div>
+
+    <script>
+      window.onload = function() {
+        document.getElementById('description').focus();
+      }
+    </script> 
+  </body>
+</html>

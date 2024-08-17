@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 4.2
-  Last Modified: 18 August 2024 2:40AM GMT+8
+  Version: 4.3
+  Last Modified: 18 August 2024 6:25AM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
@@ -275,6 +275,8 @@ function reload() {
         if (cpSetupObj.Type !== SUPPORTED_TYPE.EMAIL) {
           const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
           form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpSetupObj.GDriveOutputUrl);
+        } else {
+          form.setConfirmationMessage("Thank you for using Form-mation!\n\nExpect the email to be sent within the next 3 minutes.");
         }
       }
     } else if (
@@ -895,7 +897,7 @@ function generateGoogleForms(cpDataObj, uVariables, existingFormUrl = undefined)
 
   if (cpDataObj.Type === SUPPORTED_TYPE.EMAIL) {
     form.getItems()[0].setHelpText(`Example: "hong@email.ext cc: doe@mail.ext, jane@www.ext bcc: termi@rock.ext"`);
-    form.setConfirmationMessage("Thank you for using Form-mation!");
+    form.setConfirmationMessage("Thank you for using Form-mation!\n\nExpect the email to be sent within the next 3 minutes.");
   } else {
     form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpDataObj.GDriveOutputUrl);
   }
@@ -1000,59 +1002,71 @@ function openGeminiPrompt(hasKey=false) {
 }
 
 function runGemini(selectedType, textDescription, rerun = 0) {
-  var prePrompt = `Create a document template with a hard maximum of 5 placeholders within the template content, surrounded by double curly brackets ({{}}). Placeholders should be named descriptively (e.g., {{Date}}, {{Company Name}}). Adhere to the specified template type (e.g., letter, report, email). Use double asterisks (** **) for bold and double underscores (__ __) for underline formatting.
+  var prePrompt, prompt;
+  if (
+    selectedType === SUPPORTED_TYPE.DOC_TO_DOC ||
+    selectedType === SUPPORTED_TYPE.DOC_TO_PDF ||
+    selectedType === SUPPORTED_TYPE.EMAIL
+  ) {
+    prePrompt = `Create a document template with up to a maximum of 10 placeholders within the template content, surrounded by double curly brackets ({{}}). Placeholders should be named descriptively (e.g., {{Date}}, {{Company Name}}). Adhere to the specified template type (e.g., letter, report, email). Use double asterisks (** **) for bold and double underscores (__ __) for underline formatting.
 
-Generate a suitable file name without extensions, preferably with spaces, or a subject line for email templates. Create a process label name based on the provided description.
+Generate a suitable file name without extensions, preferably with spaces, or a subject line for email templates. Make sure to not include the email subject as part of the template content for email templates. Create a process label name based on the provided description.
 
 Output format:
 <TEMPLATE_CONTENT>[template content]</TEMPLATE_CONTENT>
 <FILE_NAME>[suggested file name]</FILE_NAME>
 <EMAIL_SUBJECT>[if type is "Email", suggested email subject]</EMAIL_SUBJECT>
-<PROCESS_NAME>[suggested template label]</PROCESS_NAME>
+<PROCESS_NAME>[suggested short and concise process label name]</PROCESS_NAME>
 `;
+  prompt = `${prePrompt} Type: "${selectedType}", Description: "${textDescription}"`;
+  } else if (
+    selectedType === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
+    selectedType === SUPPORTED_TYPE.SLIDE_TO_PDF
+  ) {
+    prompt = `Prepare a slide deck for the purpose of ${textDescription}. Generate between 5 and 15 slides, adjusting the number based on the complexity of the topic. Please generate main bullet points (up to 8 per slide) with between 1-3 placeholders each, surrounded by double curly brackets ({{}}). Placeholders should be embedded within sentences or bullet points, not standalone. Placeholders should be named descriptively, preferably with space. Avoid nested placeholders. Keep the title of each slide short and concise. Generate a suitable file name with at least 1 placeholder for this deck, without extensions, preferably with spaces. Create a process label name based on the purpose. Create a suitable topic as text shown before the deck. Please produce the result as a valid JSON (e.g., {"topic": "[topic]", "fileName": "[file name]", "processLabel": [process label name]", "slides": [{"title": "[slide 1 title]","body": []},{"title": "[slide 2 title]","body": []}]}) so that I can pass it to other APIs.`;
+  }
 
   if (rerun > 0 && rerun < 5) {
     prePrompt = prePrompt + " It seems like the previous generation output did not satisfy the output format requirements, ensure that does not occur this time.";
   } else if (rerun >= 5) return false;
 
-  const prompt = `${prePrompt} Type: "${selectedType}", Description: "${textDescription}"`;
-  const output = callGemini(prompt);
+  var geminiOutput = callGemini(prompt);
   Logger.log({selectedType, textDescription, rerun})
-  Logger.log({output});
+  Logger.log({geminiOutput});
 
-  var processName, fileName, subjectTitle, templateContent;
-
-  templateContent = output.match(/(?<=<TEMPLATE_CONTENT>).*(?=<\/TEMPLATE_CONTENT>)/s);
-  processName = getGeminiOutputContent("PROCESS_NAME", output);
-  fileName = getGeminiOutputContent("FILE_NAME", output);
-  subjectTitle = getGeminiOutputContent("EMAIL_SUBJECT", output);
-
-  if (!(templateContent && processName && fileName)) {
-    return runGemini(selectedType, textDescription, rerun + 1);
-  }
-
-  templateContent = templateContent.toString().trim();
-  processName = processName.toString().trim();
-  fileName = fileName.toString().trim();
-
-  if (subjectTitle && !subjectTitle.includes("Not Applicable")) {
-    subjectTitle = subjectTitle.toString().trim();
-    fileName = subjectTitle;
-  }
-
-  Logger.log({processName, fileName, templateContent});
-
-  var fileUrl = "";
+  var fileUrl, processName;
 
   if (
     selectedType === SUPPORTED_TYPE.DOC_TO_DOC ||
     selectedType === SUPPORTED_TYPE.DOC_TO_PDF ||
     selectedType === SUPPORTED_TYPE.EMAIL
   ) {
+    var fileName, subjectTitle, templateContent;
+
+    templateContent = geminiOutput.match(/(?<=<TEMPLATE_CONTENT>).*(?=<\/TEMPLATE_CONTENT>)/s);
+    processName = getGeminiOutputContent("PROCESS_NAME", geminiOutput);
+    fileName = getGeminiOutputContent("FILE_NAME", geminiOutput);
+    subjectTitle = getGeminiOutputContent("EMAIL_SUBJECT", geminiOutput);
+
+    if (!(templateContent && processName && fileName)) {
+      return runGemini(selectedType, textDescription, rerun + 1);
+    }
+
+    templateContent = templateContent.toString().trim();
+    processName = processName.toString().trim();
+    fileName = fileName.toString().trim();
+
+    if (subjectTitle && !subjectTitle.includes("Not Applicable")) {
+      subjectTitle = subjectTitle.toString().trim();
+      fileName = subjectTitle;
+    }
+
+    Logger.log({processName, fileName, templateContent});
+
     const doc = DocumentApp.create(fileName);
     const docId = doc.getId();
     DriveApp.getFileById(docId).moveTo(getProjectFolder());
-    fileUrl = `https://docs.google.com/document/d/${doc.getId()}/edit`;
+    fileUrl = `https://docs.google.com/document/d/${docId}/edit`;
 
     if (selectedType === SUPPORTED_TYPE.EMAIL) {
       doc.getBody().setMarginBottom(0);
@@ -1082,6 +1096,51 @@ Output format:
         doc.getBody().replaceText("\\*\\*" + text + "\\*\\*", text);
       }
     }
+  } else if (
+    selectedType === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
+    selectedType === SUPPORTED_TYPE.SLIDE_TO_PDF
+  ) {
+    // The Gemini model likes to enclose the JSON with ```json and ```
+    geminiOutput = geminiOutput.replace(/```(?:json|)/g, "");
+    // Remove potential bolding attempts by Gemini
+    geminiOutput = geminiOutput.replace(/\*\*(?:|)/g, "");
+
+    try {
+      var geminiOutputObj = JSON.parse(geminiOutput);
+      var { fileName, processLabel, topic, slides } = geminiOutputObj;
+    } catch (e) {
+      return runGemini(selectedType, textDescription, rerun + 1);
+    }
+
+    console.log(JSON.stringify(geminiOutputObj))
+
+    processName = processLabel;
+
+    // Create a Google Slides presentation.
+    const presentation = SlidesApp.create(fileName);
+    const fileId = presentation.getId();
+    DriveApp.getFileById(fileId).moveTo(getProjectFolder());
+    fileUrl = `https://docs.google.com/presentation/d/${fileId}/edit`;
+
+    // Set up the opening slide.
+    var slide = presentation.getSlides()[0]; 
+    var shapes = slide.getShapes();
+    shapes[0].getText().setText(topic);
+
+    var body;
+    for (var i = 0; i < slides.length; i++) {
+      slide = presentation.appendSlide(SlidesApp.PredefinedLayout.TITLE_AND_BODY);
+      shapes = slide.getShapes();
+      // Set title.
+      shapes[0].getText().setText(slides[i]['title']);
+  
+      // Set body.
+      body = "";
+      for (var j = 0; j < slides[i]['body'].length; j++) {
+        body += '' + slides[i]['body'][j] + '\n';
+      }
+      shapes[1].getText().setText(body);
+    } 
   }
 
   geminiInsert(selectedType, processName, fileUrl);

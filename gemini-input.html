@@ -146,9 +146,11 @@
 
         var form = document.getElementById("main-content");
         var throbber = document.getElementById("throbber");
+        var throbberText = document.getElementById("throbber-text");
 
         form.style.display = "none";
         throbber.style.display = "block";
+        throbberText.style.display = "block";
 
         google.script.run.withSuccessHandler(onSuccess).runGemini(selectedType, textDescription);
 
@@ -172,6 +174,8 @@
             <option value="Email">Email</option>
             <option value="Doc-to-Doc">Doc-to-Doc</option>
             <option value="Doc-to-PDF">Doc-to-PDF</option>
+            <option value="Slide-to-Slide">Slide-to-Slide</option>
+            <option value="Slide-to-PDF">Slide-to-PDF</option>
           </select>
         </div>
 
@@ -185,7 +189,8 @@
       </form>
     </div>
 
-    <div id="throbber" class="loader" style="display:none;"></div>
+    <div id="throbber" style="display:none;" class="loader"></div>
+    <span id="throbber-text" style="display:none;align-self: start;">Creating Process and Template...</span>
 
     <script>
       window.onload = function() {

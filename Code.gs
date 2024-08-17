@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 4.1
-  Last Modified: 17 August 2024 3:00AM GMT+8
+  Version: 4.2
+  Last Modified: 18 August 2024 2:40AM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
@@ -13,12 +13,12 @@ const SETUP_MAIN_COLUMN = [
 ];
 
 const PROJECT_FOLDER_NAME = "Form-mation";
-const PROPERTY_GEMINI_API_KEY = "GEMINI_API_KEY";
-const PROPERTY_ACTIVITY_LOG = "ACTIVITY_LOG";
 const LATEST_ACTIVITY_LOG_COUNT = 50;
-
 const VAR_PREFIX = "{{";
 const VAR_SUFFIX = "}}";
+
+const PROPERTY_GEMINI_API_KEY = "GEMINI_API_KEY";
+const PROPERTY_ACTIVITY_LOG = "ACTIVITY_LOG";
 
 const SUPPORTED_TYPE = {
   EMAIL: "Email",
@@ -90,7 +90,7 @@ function onOpen() {
       .addItem('Sheet To Sheet', 'setSheetToSheetConversion')
       .addItem('Sheet To PDF', 'setSheetToPdfConversion')
     )
-    .addItem('✨ Create Process with Gemini', 'openGeminiPrompt')
+    .addItem('✨ Co-Create a Process with Gemini', 'openGeminiPrompt')
     .addSeparator()
     .addItem('🗨 Help Form-mation improve', 'helpFormmation')
     .addSubMenu(SpreadsheetApp.getUi().createMenu('⚙ Settings')
@@ -127,7 +127,7 @@ function addRowBlank(type) {
     }
 
     processName = "Document Process";
-    templateUrl = newDoc.getUrl();
+    templateUrl = `https://docs.google.com/document/d/${newDoc.getId()}/edit`;
   } else if (
     type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
     type === SUPPORTED_TYPE.SLIDE_TO_PDF
@@ -135,7 +135,7 @@ function addRowBlank(type) {
     const file = SlidesApp.create("Slide Template");
     DriveApp.getFileById(file.getId()).moveTo(getProjectFolder());
     processName = "Slide Process";
-    templateUrl = file.getUrl();
+    templateUrl = `https://docs.google.com/presentation/d/${file.getId()}/edit`;
   } else if (
     type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
     type === SUPPORTED_TYPE.SHEET_TO_PDF
@@ -143,7 +143,7 @@ function addRowBlank(type) {
     const file = SpreadsheetApp.create("Sheet Template");
     DriveApp.getFileById(file.getId()).moveTo(getProjectFolder());
     processName = "Sheet Process";
-    templateUrl = file.getUrl();
+    templateUrl = `https://docs.google.com/spreadsheets/d/${file.getId()}/edit`;
   }
   
   var inputs = [];
@@ -238,8 +238,7 @@ function reload() {
       if (
         disableRow(
           !(
-            cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/") ||
-            cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/open?id=")
+            cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/")
           )
         , row, errorMsg)
       ) {
@@ -426,7 +425,7 @@ function reload() {
       alertMsg += `${index + 1}. Process '${name}' on row ${row}
       Information: ${message}\n\n`;
     })
-    ui.alert("Validation Issues Detected", `These process are currently disabled due to an error. Hover over the 'Enabled' cell of the error causing process for more information. Resolve the underlying issue, re-enable the process, and re-validate.\n\n` + alertMsg, ui.ButtonSet.OK);
+    ui.alert("Validation Issues Detected", `These processes are currently disabled due to an error.\nHover over the 'Enabled' cell of the error causing process for more information. Resolve the underlying issue, re-enable the process, and re-validate.\n\n` + alertMsg, ui.ButtonSet.OK);
   }
 
   newActivityLog(`Ran validation.`);
@@ -663,7 +662,6 @@ function onDocTrigger(e) {
   if (cpDataObj.Type === SUPPORTED_TYPE.DOC_TO_PDF) {
     doc.setName(doc.getName() + ".pdf");
     const pdf = convertToPdf_(doc, destinationFolder); // Convert the doc to a PDF file.
-    const url = pdf.getUrl(); // Get the URL of the new PDF file.
     const docFile = DriveApp.getFileById(doc.getId()); // Get the temporary Google Docs file.
     docFile.setTrashed(true); // Trash the temporary Google Docs file.
   }
@@ -947,8 +945,11 @@ function getActivityHistory() {
 
   var output = value.map(({ date, activity }) => `<li><p class="activity-date">${date}</p><p class="activity-details">${activity}</p></li>`).join("");
 
-  console.log({output})
   return output;
+}
+
+function clearActivityHistory() {
+  PropertiesService.getScriptProperties().deleteProperty(PROPERTY_ACTIVITY_LOG);
 }
 
 /*
@@ -999,58 +1000,49 @@ function openGeminiPrompt(hasKey=false) {
 }
 
 function runGemini(selectedType, textDescription, rerun = 0) {
-  var prePrompt = `Create a document template with a hard maximum of 5 placeholders in total within the template content surrounded by double curly brackets ({{ }}) with no space between the placeholder and curly brackets. The template should adhere to the specified template type and accurately reflect the provided description. For the template body, if formatting is included, for bold it should be surrounded by double asterisk (** **) and for underline it should be surrounded by double underscore (__ __). Alongside the template, generate (a suitable file name without extensions and file name with spaces are preferred OR if it's for type of email, generate a suitable subject title both of which accepts placeholders as well) and process label name based on the description provided.
+  var prePrompt = `Create a document template with a hard maximum of 5 placeholders within the template content, surrounded by double curly brackets ({{}}). Placeholders should be named descriptively (e.g., {{Date}}, {{Company Name}}). Adhere to the specified template type (e.g., letter, report, email). Use double asterisks (** **) for bold and double underscores (__ __) for underline formatting.
 
-Structure the output as follows:
-<TEMPLATE> [Insert template content here] <TEMPLATE>
-<FILENAME> [Suggested file name] <FILENAME>
-<SUBJECT> [Suggested email subject] <SUBJECT>
-<PROCESSNAME> [Suggested process name] <PROCESSNAME>`;
+Generate a suitable file name without extensions, preferably with spaces, or a subject line for email templates. Create a process label name based on the provided description.
+
+Output format:
+<TEMPLATE_CONTENT>[template content]</TEMPLATE_CONTENT>
+<FILE_NAME>[suggested file name]</FILE_NAME>
+<EMAIL_SUBJECT>[if type is "Email", suggested email subject]</EMAIL_SUBJECT>
+<PROCESS_NAME>[suggested template label]</PROCESS_NAME>
+`;
 
   if (rerun > 0 && rerun < 5) {
-    Logger.log({rerun});
-    prePrompt = prePrompt + " It seems like the previous generation output did not satisfy the requirements which were specified especially the ones which are mentioned to surround, ensure that does not occur this time.";
-  }
+    prePrompt = prePrompt + " It seems like the previous generation output did not satisfy the output format requirements, ensure that does not occur this time.";
+  } else if (rerun >= 5) return false;
 
   const prompt = `${prePrompt} Type: "${selectedType}", Description: "${textDescription}"`;
   const output = callGemini(prompt);
   Logger.log({selectedType, textDescription, rerun})
   Logger.log({output});
 
-  try {
-    var processName = output.match(/(?<=\<PROCESSNAME> ).+?(?=\ <PROCESSNAME>)/g);
-    var fileName = output.match(/(?<=\<FILENAME> ).+?(?=\ <FILENAME>)/g);
-    var subjectTitle = output.match(/(?<=\<SUBJECT> ).+?(?=\ <SUBJECT>)/g);
-    var templateContent = output.match(/(?<=\<TEMPLATE> <TEMPLATE>).*(?=\<TEMPLATE> <TEMPLATE>)/s);
-    if (!processName) {
-      processName = output.match(/(?<=\<PROCESSNAME> ).+?(?=\ <\/PROCESSNAME>)/g)[0];
-    } else {
-      processName = processName[0];
-    }
-    if (!fileName) {
-      fileName = output.match(/(?<=\<FILENAME> ).+?(?=\ <\/FILENAME>)/g)[0];
-    } else {
-      fileName = fileName[0];
-    }
-    if (!subjectTitle) {
-      subjectTitle = output.match(/(?<=\<SUBJECT> ).+?(?=\ <\/SUBJECT>)/g)[0];
-    } else {
-      if (!subjectTitle.includes("Not Applicable")) {
-        fileName = subjectTitle[0];
-      }
-    }
-    if (!templateContent) {
-      templateContent = output.match(/(?<=\<TEMPLATE>).*(?=\<\/TEMPLATE>)/s);
-      if (!templateContent) templateContent = output.match(/(?<=\<TEMPLATE>).*(?=\<TEMPLATE>)/s)[0];
-      else templateContent = templateContent[0];
-    } else {
-      templateContent = templateContent[0];
-    }
-    templateContent = templateContent.toString().trim();
-  } catch (e) {
-    return runGemini(selectedType, textDescription, rerun++);
+  var processName, fileName, subjectTitle, templateContent;
+
+  templateContent = output.match(/(?<=<TEMPLATE_CONTENT>).*(?=<\/TEMPLATE_CONTENT>)/s);
+  processName = getGeminiOutputContent("PROCESS_NAME", output);
+  fileName = getGeminiOutputContent("FILE_NAME", output);
+  subjectTitle = getGeminiOutputContent("EMAIL_SUBJECT", output);
+
+  if (!(templateContent && processName && fileName)) {
+    return runGemini(selectedType, textDescription, rerun + 1);
   }
-  // Logger.log({processName, fileName, templateContent});
+
+  templateContent = templateContent.toString().trim();
+  processName = processName.toString().trim();
+  fileName = fileName.toString().trim();
+
+  if (subjectTitle && !subjectTitle.includes("Not Applicable")) {
+    subjectTitle = subjectTitle.toString().trim();
+    fileName = subjectTitle;
+  }
+
+  Logger.log({processName, fileName, templateContent});
+
+  var fileUrl = "";
 
   if (
     selectedType === SUPPORTED_TYPE.DOC_TO_DOC ||
@@ -1060,6 +1052,7 @@ Structure the output as follows:
     const doc = DocumentApp.create(fileName);
     const docId = doc.getId();
     DriveApp.getFileById(docId).moveTo(getProjectFolder());
+    fileUrl = `https://docs.google.com/document/d/${doc.getId()}/edit`;
 
     if (selectedType === SUPPORTED_TYPE.EMAIL) {
       doc.getBody().setMarginBottom(0);
@@ -1089,10 +1082,10 @@ Structure the output as follows:
         doc.getBody().replaceText("\\*\\*" + text + "\\*\\*", text);
       }
     }
-
-    geminiInsert(selectedType, processName, doc.getUrl());
-    return doc.getUrl();
   }
+
+  geminiInsert(selectedType, processName, fileUrl);
+  return fileUrl;
 }
 
 function geminiInsert(type, name, templateUrl) {

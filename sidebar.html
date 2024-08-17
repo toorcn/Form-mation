@@ -3,13 +3,45 @@
   <head>
     <base target="_top">
     <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,300" rel="stylesheet" type="text/css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
   </head>
   <style>
     body{
       font-family:Open Sans;
       margin:0;
     }
-    .quota, .usage, .history {
+    .refresh-section{
+      display:flex;
+      padding:10px 15px;
+      padding-bottom:0;
+      flex-direction:row;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .refresh-button, .submit{
+        padding: 5px 10px;
+        background-color: #405cf5;
+        border-radius: 6px;
+        border-width: 0;
+        box-shadow: rgba(50, 50, 93, .1) 0 0 0 1px inset,rgba(50, 50, 93, .1) 0 2px 5px 0,rgba(0, 0, 0, .07) 0 1px 1px 0;
+        box-sizing: border-box;
+        color: #fff;
+        cursor: pointer;
+        outline: none;
+        overflow: hidden;
+        position: relative;
+        text-align: center;
+        text-transform: none;
+        transform: translateZ(0);
+        transition: all .2s,box-shadow .08s ease-in;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: manipulation;
+    }
+    .refresh-button:hover, .submit:hover{
+      background-color: #3045BD;
+    }
+    .quota, .usage{
       padding-left:15px;
       margin-top:15px;
       margin-bottom:5px;
@@ -18,6 +50,7 @@
       list-style:none;
       padding:0;
       margin: 0 15px;
+      margin-bottom:20px;
     }
     .dropdown-list li{
       background-color:#f2f2f2;
@@ -126,10 +159,14 @@
   </style>
 
   <body>
-    <p><i style="font-size:10px;display:flex;justify-content:center;">Information as of <?= getCurrentDate() ?></i></p>
+    <div class="refresh-section">
+      <span style="font-size:10px;"><i>Information as of <span id="current-date"><?= getCurrentDate() ?></span>
+      </i></span>
+      <button type="button" class="refresh-button" onclick="refresh()"><i class="fa fa-refresh"></i> Refresh</button>
+    </div>
 
     <h4 class="quota">Quota Remaining</h4>
-    <p style="padding:0 25px;margin:0;">Email : <?= getEmailQuota() ?></p>
+    <p style="padding:0 25px;margin-top:0px;margin-bottom:30px;">Email : <span id="quota-email"><?= getEmailQuota() ?></span></p>
 
     <h4 class="usage">Usage Information</h4>
     <ul class="dropdown-list">
@@ -185,8 +222,11 @@
         </div>
       </li>
     </ul>
-
-    <h4 class="history">Activity History</h4>
+    
+    <div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;padding:0 15px;margin-top:15px;margin-bottom:5px;">
+      <h4 class="history" style="margin:0;">Activity History</h4>
+      <input id="submit" class="submit" type="submit" value="Clear Logs" onclick="onClearLog()" />
+    </div>
     <ul class="dropdown-list">
       <li>
         <div class="question">
@@ -194,7 +234,7 @@
           <h5>Open Logs</h5>
         </div>
         <div class="answer">
-          <ul class="activity-log">
+          <ul class="activity-log" id="activity-log">
             <?!= getActivityHistory() ?>
           </ul>
         </div>
@@ -217,6 +257,36 @@
         //Rotate the arrow element
         arrow[i].classList.toggle('arrow-rotated');
       });
+    }
+
+    function onClearLog() {
+      google.script.run.withSuccessHandler(onSuccess).clearActivityHistory();
+    }
+
+    function onSuccess() {
+      const activityLog = document.getElementById("activity-log");
+
+      activityLog.innerHTML = "";
+    }
+
+    function refresh() {
+      const currentDate = document.getElementById("current-date");
+      const quotaEmail = document.getElementById("quota-email");
+      const activityLog = document.getElementById("activity-log");
+
+      google.script.run.withSuccessHandler((value) => {
+        quotaEmail.innerHTML = value;
+      }).getEmailQuota();
+
+      google.script.run.withSuccessHandler((value) => {
+        if (!value) value = "";
+        activityLog.innerHTML = value;
+      }).getActivityHistory();
+
+      google.script.run.withSuccessHandler((value) => {
+        currentDate.innerHTML = value;
+      }).getCurrentDate();
+      
     }
   </script>
 </html>

@@ -274,3 +274,8 @@ function callGemini(prompt, temperature=0.5) {
   const content = data["candidates"][0]["content"]["parts"][0]["text"];
   return content;
 }
+
+function getGeminiOutputContent(Keyword, str) {
+  const rg = new RegExp(`(?<=<${Keyword}>).+?(?=<\/${Keyword}>)`);
+  return str.match(rg);
+}

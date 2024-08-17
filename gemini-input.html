@@ -18,112 +18,66 @@
 
       /* Throbber */
       :root {
-        --hue: 223;
-        --bg: hsl(var(--hue),10%,90%);
-        --fg: hsl(var(--hue),10%,10%);
-        --trans-dur: 0.3s;
-        font-size: calc(16px + (24 - 16) * (100vw - 320px) / (1280 - 320));
+        --size: 25;
+        --color-one: #ea4335;
+        --color-two: #4285f4;
+        --color-three: #34a853;
+        --color-four: #fbbc05;
       }
-      .pl {
-        display: block;
-        width: 8em;
-        height: 8em;
+      body {
+        min-height: 100vh;
       }
-      .pl__ring,
-      .pl__ball1,
-      .pl__ball2 {
-        animation-duration: 2s;
-        animation-timing-function: ease-in-out;
-        animation-iteration-count: infinite;
-        transform-origin: 32px 32px;
+      @property --nose {
+        syntax: '<percentage>';
+        initial-value: 0%;
+        inherits: false;
       }
-      .pl__ring {
-        animation-name: ring;
+      @property --tail {
+        syntax: '<percentage>';
+        initial-value: 0%;
+        inherits: false;
       }
-      .pl__ball1 {
-        animation-name: ball1;
-      }
-      .pl__ball2 {
-        animation-name: ball2;
+      .loader {
+        height: calc(var(--size) * 1vmin);
+        width: calc(var(--size) * 1vmin);
+        border-radius: 50%;
+        mask: conic-gradient(
+          from 45deg,
+          transparent 0 var(--tail),
+          #000 0 var(--nose),
+          transparent 0 var(--nose)
+        );
+        border-style: solid;
+        border-width: 5vmin;
+        border-top-color: var(--color-one);
+        border-right-color: var(--color-two);
+        border-bottom-color: var(--color-three);
+        border-left-color: var(--color-four);
+        animation: load 2.5s both infinite ease-in-out, spin 3.25s infinite linear;
       }
 
-      /* Dark theme  */
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: hsl(var(--hue),10%,10%);
-          --fg: hsl(var(--hue),10%,90%);
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
         }
       }
 
-      /* Animation */
-      @keyframes ring {
-        from {
-          animation-timing-function: ease-in-out;
-          stroke-dashoffset: -122.52;
-          transform: rotate(135deg);
+      @keyframes load {
+        0% {
+          --tail: 0%;
+          --nose: 0%;
         }
-        15% {
-          animation-timing-function: ease-in;
-          stroke-dashoffset: -122.52;
-          transform: rotate(90deg);
-        }
-        35% {
-          animation-timing-function: ease-out;
-          stroke-dashoffset: -65.34;
-          transform: rotate(297.5deg);
-        }
-        55% {
-          animation-timing-function: ease-in-out;
-          stroke-dashoffset: -122.52;
-          transform: rotate(505deg);
-        }
-        70% {
-          animation-timing-function: ease-in-out;
-          stroke-dashoffset: -122.52;
-          transform: rotate(490deg);
-        }
-        85%,
-        to {
-          stroke-dashoffset: -122.52;
-          transform: rotate(497.5deg);
-        }
-      }
-      @keyframes ball1 {
-        from {
-          transform: rotate(14deg);
-        }
-        20% {
-          transform: rotate(-7deg);
-        }
+        40%,
         60% {
-          transform: rotate(399deg);
+          --nose: 100%;
+          --tail: 0%;
         }
-        75% {
-          transform: rotate(361deg);
-        }
-        90%,
-        to {
-          transform: rotate(374deg);
+        100% {
+          --nose: 100%;
+          --tail: 100%;
         }
       }
-      @keyframes ball2 {
-        from {
-          transform: rotate(-21deg);
-        }
-        25% {
-          transform: rotate(-47deg);
-        }
-        60% {
-          transform: rotate(364deg);
-        }
-        75% {
-          transform: rotate(326deg);
-        }
-        90%,
-        to {
-          transform: rotate(339deg);
-        }
-      }
+      /* Throbber End */
 
       #main-content{
         display: flex;
@@ -194,9 +148,14 @@
         var throbber = document.getElementById("throbber");
 
         form.style.display = "none";
-        throbber.style.display = "flex";
+        throbber.style.display = "block";
 
         google.script.run.withSuccessHandler(onSuccess).runGemini(selectedType, textDescription);
+
+        // Ensures modal closes after 15s in case of edge case which causes it to cause unexpected errors
+        setTimeout(() => {
+          google.script.host.close();
+        }, "15000");
       }
 
       function onSuccess(result) {
@@ -221,35 +180,12 @@
           <textarea rows="1" name="description" id="description" placeholder="Briefly describe your template (ex. Product Inquiry)" autofocus required></textarea>
         </div>
 
-        <input class="submit" type="submit" value="✨ Generate" onclick="onSubmit()" />
-        <p><i style="font-size:10px;display:flex;justify-content:center;">Responses may display inaccurate or offensive information that doesn't represent our views.</i></p>
+        <input id="submit" class="submit" type="submit" value="✨ Generate" onclick="onSubmit()" />
+        <p><i style="font-size:10px;display:flex;justify-content:center;">Generated text may display inaccurate or offensive information that doesn't represent our views.</i></p>
       </form>
     </div>
-    <div id="throbber" class="main-content-sections" style="height: 100vh; justify-content: center; margin: 0; display: none;">
-      <svg class="pl" viewBox="0 0 64 64" width="64px" height="64px" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#000" />
-          <stop offset="100%" stop-color="#fff" />
-        </linearGradient>
-        <mask id="grad-mask">
-          <rect x="0" y="0" width="64" height="64" fill="url(#grad)" />
-        </mask>
-      </defs>
-      <circle class="pl__ring" cx="32" cy="32" r="26" fill="none" stroke="hsl(223,90%,55%)" stroke-width="12" stroke-dasharray="169.65 169.65" stroke-dashoffset="-127.24" stroke-linecap="round" transform="rotate(135)" />
-      <g fill="hsl(223,90%,55%)">
-        <circle class="pl__ball1" cx="32" cy="45" r="6" transform="rotate(14)" />
-        <circle class="pl__ball2" cx="32" cy="48" r="3" transform="rotate(-21)" />
-      </g>
-      <g mask="url(#grad-mask)">
-        <circle class="pl__ring" cx="32" cy="32" r="26" fill="none" stroke="hsl(283,90%,55%)" stroke-width="12" stroke-dasharray="169.65 169.65" stroke-dashoffset="-127.24" stroke-linecap="round" transform="rotate(135)" />
-        <g fill="hsl(283,90%,55%)">
-          <circle class="pl__ball1" cx="32" cy="45" r="6" transform="rotate(14)" />
-          <circle class="pl__ball2" cx="32" cy="48" r="3" transform="rotate(-21)" />
-        </g>
-      </g>
-    </svg>
-    </div>
+
+    <div id="throbber" class="loader" style="display:none;"></div>
 
     <script>
       window.onload = function() {
@@ -258,6 +194,14 @@
 
       document.addEventListener('DOMContentLoaded', function() {
         const textarea = document.getElementById('description');
+
+        textarea.addEventListener('keypress', e => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+
+            onSubmit();
+          }
+        });
 
         textarea.addEventListener('input', function() {
           this.style.height = 'auto'; // Reset the height

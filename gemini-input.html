@@ -154,10 +154,10 @@
 
         google.script.run.withSuccessHandler(onSuccess).runGemini(selectedType, textDescription);
 
-        // Ensures modal closes after 15s in case of edge case which causes it to cause unexpected errors
+        // Ensures modal closes after 20s in case of edge case which causes it to cause unexpected errors
         setTimeout(() => {
           google.script.host.close();
-        }, "15000");
+        }, "20000");
       }
 
       function onSuccess(result) {
@@ -169,6 +169,11 @@
     <div id="main-content">
       <form action="" method="get">
         <div class="main-content-sections">
+          <label for="description">Purpose of Template :</label>
+          <textarea rows="1" name="description" id="description" placeholder="Briefly describe your template (ex. Product Inquiry)" autofocus required></textarea>
+        </div>
+
+        <div class="main-content-sections">
           <label for="type">Select a Process Type :</label>
           <select name="type" id="type">
             <option value="Email">Email</option>
@@ -177,11 +182,6 @@
             <option value="Slide-to-Slide">Slide-to-Slide</option>
             <option value="Slide-to-PDF">Slide-to-PDF</option>
           </select>
-        </div>
-
-        <div class="main-content-sections">
-          <label for="description">Purpose of Template :</label>
-          <textarea rows="1" name="description" id="description" placeholder="Briefly describe your template (ex. Product Inquiry)" autofocus required></textarea>
         </div>
 
         <input id="submit" class="submit" type="submit" value="✨ Generate" onclick="onSubmit()" />

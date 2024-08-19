@@ -1,3 +1,38 @@
+const DEFAULT_TYPE_TEMPLATE = {
+  EMAIL: {
+    name: "Email Sample",
+    url: "https://docs.google.com/document/d/1LLRoaCZpEDCcByKSMTpsoav95Y5xhLmK5fLEJkda_d0/edit"
+  },
+  DOC_TO_DOC: {
+    name: "Doc Sample",
+    url: "https://docs.google.com/document/d/1JpqjS33Jl-538x0XhxdLIJCQhOsC0JvnrGc1e4jfxVM/edit"
+  },
+  DOC_TO_PDF: {
+    name: "Doc Sample",
+    url: "https://docs.google.com/document/d/1OGE4YggdJnJWDOtPRMetByNULJD_c4HPNX_pEnfX1YM/edit"
+  },
+  SLIDE_TO_SLIDE: {
+    name: "Slide Sample",
+    url: "https://docs.google.com/presentation/d/1GaWQQmruGXa-2MM06aHinr5fNhTqsaZ5QDdd7y6MjOo/edit"
+  },
+  SLIDE_TO_PDF: {
+    name: "Slide Sample",
+    url: "https://docs.google.com/presentation/d/1ndQrvvW2QWOYijM17yS6mmYdXGAl2uOyCHlT0Vma31k/edit"
+  },
+  SHEET_TO_SHEET: {
+    name: "Sheet Sample",
+    url: "https://docs.google.com/spreadsheets/d/1kJpe7FUw8jhjOt7aWm5_y9DvR1KWU21rQG2MSmJw78A/edit"    
+  },
+  SHEET_TO_PDF: {
+    name: "Sheet Sample",
+    url: "https://docs.google.com/spreadsheets/d/1aB3CuHHOZZbihWrKrk2ME781DoIxO55luDBNWsd5LYI/edit"    
+  }
+};
+
+// Regular Expression used to find and retrieve variables
+const patternString = `(?<=${VAR_PREFIX}).+?(?=${VAR_SUFFIX})`;
+const uvRegex = new RegExp(patternString, 'g');
+
 function setEmailBlank() { addRowBlank(SUPPORTED_TYPE.EMAIL); }
 function setDocToPdfBlank() { addRowBlank(SUPPORTED_TYPE.DOC_TO_PDF); }
 function setDocToDocBlank() { addRowBlank(SUPPORTED_TYPE.DOC_TO_DOC); }
@@ -245,6 +280,88 @@ function getProjectFolder() {
   const folder = DriveApp.getFoldersByName(PROJECT_FOLDER_NAME);
 
   return folder.next();
+}
+
+function extractNotionBlockId(notionUrl) {
+  const regex = /#([a-f0-9]{32})/;
+  const match = notionUrl.match(regex);
+  return match ? match[1] : null;
+}
+
+function getNotionUrlType(notionUrl) {
+  const id = extractNotionBlockId(notionUrl);
+  const url = `https://api.notion.com/v1/blocks/${id}`;
+
+  const headers = {
+    'Authorization': `Bearer ${PropertiesService.getScriptProperties().getProperty(PROPERTY_NOTION_API_KEY)}`,
+    'Content-Type': 'application/json',
+    'Notion-Version': '2022-06-28'
+  };
+
+  const options = {
+    method: 'get',
+    contentType: 'application/json',
+    headers: headers,
+    muteHttpExceptions: true
+  };
+
+  const response = UrlFetchApp.fetch(url, options);
+  const responseData = JSON.parse(response.getContentText());
+  if (responseData.status === 400) {
+    return false;
+  }
+
+  var is_toggleable;
+
+  // get is toggleable
+  if (responseData.heading_1) is_toggleable = responseData.heading_1.is_toggleable;
+  if (responseData.heading_2) is_toggleable = responseData.heading_2.is_toggleable;
+  if (responseData.heading_3) is_toggleable = responseData.heading_3.is_toggleable;
+
+  return { type: responseData.type, is_toggleable };
+}
+
+
+function isSupportChildBlockNotion(notionUrl) {
+  const res = getNotionUrlType(notionUrl);
+  if (!res) return res;
+  if (res.is_toggleable) return res.type;
+  if (
+    NOTION_SUPPORTED_TYPE.includes(res.type) &&
+    res.is_toggleable === undefined
+  ) {
+    return res.type
+  }
+  return false;
+}
+
+function openInputKeyPrompt({
+  propertyName,
+  keyName,
+  getKeyUrl,
+  keySample
+}) {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.prompt(`Setting your ${keyName}`, `Key (${scriptProperties.getProperty(propertyName)})\n\nTo remove your ${keyName}, enter 'UNSET'.`, ui.ButtonSet.OK_CANCEL);
+  const responseText = response.getResponseText();
+  const responseButton = response.getSelectedButton();
+  if (responseButton != "OK") return;
+  if (!responseText) {
+    ui.alert(`Setting your ${keyName}`, `${keyName} can not be empty!\n\nGet your ${keyName} here: ${getKeyUrl}\nIt looks something like this: '${keySample}'`, ui.ButtonSet.OK);
+    return;
+  }
+  if (responseText.length != keySample.length) {
+    if (responseText == 'UNSET') {
+      scriptProperties.deleteProperty(propertyName);
+      ui.alert(`Setting ${keyName} success!`, `Your ${keyName} is removed!`, ui.ButtonSet.OK);
+      return;
+    }
+    SpreadsheetApp.getUi().alert(`Setting your ${keyName}`, `${keyName} is invalid!\n\nGet your ${keyName} here: ${getKeyUrl}\nIt looks something like this: '${keySample}'`, ui.ButtonSet.OK);
+    return;    
+  }
+  scriptProperties.setProperty(propertyName, responseText);
+  return responseButton;
 }
 
 function callGemini(prompt, temperature=0.5) {

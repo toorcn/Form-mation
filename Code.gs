@@ -3,13 +3,13 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 4.3
-  Last Modified: 18 August 2024 6:25AM GMT+8
+  Version: 4.4
+  Last Modified: 19 August 2024 3:40PM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
   "Enabled", "Name", "Type",
-  "TemplateUrl", "GDriveOutputUrl", "GFormUrl",
+  "TemplateUrl", "GDriveOutputUrl", "NotionUrl", "GFormUrl",
 ];
 
 const PROJECT_FOLDER_NAME = "Form-mation";
@@ -18,7 +18,11 @@ const VAR_PREFIX = "{{";
 const VAR_SUFFIX = "}}";
 
 const PROPERTY_GEMINI_API_KEY = "GEMINI_API_KEY";
+const PROPERTY_NOTION_API_KEY = "NOTION_API_KEY";
 const PROPERTY_ACTIVITY_LOG = "ACTIVITY_LOG";
+
+// https://developers.notion.com/reference/block#block-types-that-support-child-blocks
+const NOTION_SUPPORTED_TYPE = ['bulleted_list_item', 'callout', 'child_database', 'child_page', 'column', 'heading_1', 'heading_2', 'heading_3', 'numbered_list_item', 'paragraph', 'quote', 'synced_block', 'table', 'template', 'to_do', 'toggle'];
 
 const SUPPORTED_TYPE = {
   EMAIL: "Email",
@@ -29,41 +33,6 @@ const SUPPORTED_TYPE = {
   SHEET_TO_SHEET: "Sheet-to-Sheet",
   SHEET_TO_PDF: "Sheet-to-PDF"
 };
-
-const DEFAULT_TYPE_TEMPLATE = {
-  EMAIL: {
-    name: "Email Sample",
-    url: "https://docs.google.com/document/d/1LLRoaCZpEDCcByKSMTpsoav95Y5xhLmK5fLEJkda_d0/edit"
-  },
-  DOC_TO_DOC: {
-    name: "Doc Sample",
-    url: "https://docs.google.com/document/d/1JpqjS33Jl-538x0XhxdLIJCQhOsC0JvnrGc1e4jfxVM/edit"
-  },
-  DOC_TO_PDF: {
-    name: "Doc Sample",
-    url: "https://docs.google.com/document/d/1OGE4YggdJnJWDOtPRMetByNULJD_c4HPNX_pEnfX1YM/edit"
-  },
-  SLIDE_TO_SLIDE: {
-    name: "Slide Sample",
-    url: "https://docs.google.com/presentation/d/1GaWQQmruGXa-2MM06aHinr5fNhTqsaZ5QDdd7y6MjOo/edit"
-  },
-  SLIDE_TO_PDF: {
-    name: "Slide Sample",
-    url: "https://docs.google.com/presentation/d/1ndQrvvW2QWOYijM17yS6mmYdXGAl2uOyCHlT0Vma31k/edit"
-  },
-  SHEET_TO_SHEET: {
-    name: "Sheet Sample",
-    url: "https://docs.google.com/spreadsheets/d/1kJpe7FUw8jhjOt7aWm5_y9DvR1KWU21rQG2MSmJw78A/edit"    
-  },
-  SHEET_TO_PDF: {
-    name: "Sheet Sample",
-    url: "https://docs.google.com/spreadsheets/d/1aB3CuHHOZZbihWrKrk2ME781DoIxO55luDBNWsd5LYI/edit"    
-  }
-};
-
-// Regular Expression used to find and retrieve variables
-const patternString = `(?<=${VAR_PREFIX}).+?(?=${VAR_SUFFIX})`;
-const uvRegex = new RegExp(patternString, 'g');
 
 // To show the menu item to reload
 function onOpen() {
@@ -92,12 +61,14 @@ function onOpen() {
     )
     .addItem('✨ Co-Create a Process with Gemini', 'openGeminiPrompt')
     .addSeparator()
-    .addItem('🗨 Help Form-mation improve', 'helpFormmation')
+    .addItem('🗨 Help Form-mation improve', 'openFeedback')
     .addSubMenu(SpreadsheetApp.getUi().createMenu('⚙ Settings')
       .addItem('Gemini API Key', 'openGeminiKeyPrompt')
+      .addItem('Notion API Key', 'openNotionKeyPrompt')
     ).addToUi();
 }
 
+// adds blank process & template
 function addRowBlank(type) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var data = sheet.getDataRange().getValues();
@@ -158,6 +129,7 @@ function addRowBlank(type) {
   sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
 }
 
+// adds sample process & template from making a copy of a predefined document
 function addRowConversion(type) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   var data = sheet.getDataRange().getValues();
@@ -185,11 +157,11 @@ function addRowConversion(type) {
   sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
 }
 
-function helpFormmation() {
+function openFeedback() {
   var ui = HtmlService.createHtmlOutputFromFile('feedback-page')
     .setHeight(500)
     .setWidth(500);
-  SpreadsheetApp.getUi().showModelessDialog(ui, "Help Form-mation improve");
+  SpreadsheetApp.getUi().showModalDialog(ui, "Help Form-mation improve");
 }
 
 function onEdit(e) {
@@ -197,15 +169,17 @@ function onEdit(e) {
   range.clearNote();
 }
 
+// Main function for validation
 function reload() {
-  deleteAllTrigger();
-
   var errorMsgs = [];
   var errorMsg = "";
 
-  var controlPanelSetups = getControlPanelSetups();
+  deleteAllTrigger();
 
-  var row = 1;
+  var controlPanelSetups, row;
+
+  controlPanelSetups = getControlPanelSetups();
+  row = 1;
   for (var i = 0; i < controlPanelSetups.length; i++) {
     row++;
     var cpSetupObj = controlPanelSetups[i];
@@ -236,11 +210,7 @@ function reload() {
     ) {
       errorMsg = "'Template Link' contains an invalid Google Docs link.";
       if (
-        disableRow(
-          !(
-            cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/")
-          )
-        , row, errorMsg)
+        disableRow(!cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/"), row, errorMsg)
       ) {
         errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
         continue;
@@ -272,8 +242,8 @@ function reload() {
         // update control panel and form items of new variables found in template
         cpSetupObj = updateVariablesFromTemplate(cpSetupObj, row);
         // update form confirmation message with newest GDriveOutputUrl
+        const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
         if (cpSetupObj.Type !== SUPPORTED_TYPE.EMAIL) {
-          const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
           form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpSetupObj.GDriveOutputUrl);
         } else {
           form.setConfirmationMessage("Thank you for using Form-mation!\n\nExpect the email to be sent within the next 3 minutes.");
@@ -394,6 +364,25 @@ function reload() {
         continue;
       }
 
+      if (cpSetupObj.NotionUrl) {
+        if (cpSetupObj.Type !== SUPPORTED_TYPE.EMAIL) { // CURRENTLY DISABLED DUE TO REQUIRING ADDITIONAL AUTHORIZATION FOR GMAIL
+          // has key
+          const notionApiKey = PropertiesService.getScriptProperties().getProperty(PROPERTY_NOTION_API_KEY);
+          if (!notionApiKey) {
+            openNotionKeyPrompt();
+          }
+          // is support
+          errorMsg = `'(Optional) Notion Link' contains an invalid or unsupported Notion Block link. Refer to this for supported Notion block types: https://developers.notion.com/reference/block#block-types-that-support-child-blocks`;
+          if (
+            disableRow(!isSupportChildBlockNotion(cpSetupObj.NotionUrl)
+            , row, errorMsg)
+          ) {
+            errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+            continue;
+          }
+        }
+      }
+
       if (
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC
@@ -427,7 +416,7 @@ function reload() {
       alertMsg += `${index + 1}. Process '${name}' on row ${row}
       Information: ${message}\n\n`;
     })
-    ui.alert("Validation Issues Detected", `These processes are currently disabled due to an error.\nHover over the 'Enabled' cell of the error causing process for more information. Resolve the underlying issue, re-enable the process, and re-validate.\n\n` + alertMsg, ui.ButtonSet.OK);
+    ui.alert("Validation Issues Detected", `These processes are currently disabled due to an error.\nHover over the 'Active' cell of the error causing process for more information. Resolve the underlying issue, re-enable the process, and re-validate.\n\n` + alertMsg, ui.ButtonSet.OK);
   }
 
   newActivityLog(`Ran validation.`);
@@ -502,13 +491,17 @@ function updateVariablesFromTemplate(cpSetupObj, row) {
   return cpSetupObj;
 }
 
+/*
+  Google Forms on submit to trigger background process
+*/
+
 function createTrigger(cpSetupObj, funcName) {
   const gf = FormApp.openByUrl(cpSetupObj.GFormUrl);
   const triggerId = ScriptApp.newTrigger(funcName)
-      .forForm(gf)
-      .onFormSubmit()
-      .create()
-      .getUniqueId();
+    .forForm(gf)
+    .onFormSubmit()
+    .create()
+    .getUniqueId();
   Logger.log("Trigger created for '" + cpSetupObj.Name + "' to function '" + funcName + "' with triggerUID '" + triggerId + "'");
 }
 
@@ -542,15 +535,24 @@ function onSheetTrigger(e) {
     }
   });
 
-  copy.setName(outputFileName);   
+  copy.setName(outputFileName);
+
+  var outputFile = copy;   
 
   if (cpDataObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF) {
     copy.setName(copy.getName() + ".pdf");
     var blob = DriveApp.getFileById(sheets.getId()).getBlob();
-    destinationFolder.createFile(blob);
+    outputFile = destinationFolder.createFile(blob);
     const sheetsFile = DriveApp.getFileById(sheets.getId());
     sheetsFile.setTrashed(true);
   }
+  
+  // if has notion url, perform insert
+  const notionUrl = cpDataObj.NotionUrl;
+  if (notionUrl) {
+    appendBlockToNotion(notionUrl, outputFile);
+  }
+
   newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
 
@@ -607,13 +609,22 @@ function onSlideTrigger(e) {
   slides.setName(outputFileName);  
   slides.saveAndClose();
 
+  var outputFile = slides;
+
   if (cpDataObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF) {
     slides.setName(slides.getName() + ".pdf");
     var blob = DriveApp.getFileById(slides.getId()).getBlob();
-    destinationFolder.createFile(blob);
+    outputFile = destinationFolder.createFile(blob);
     const slidesFile = DriveApp.getFileById(slides.getId());
     slidesFile.setTrashed(true);
   }
+  
+  // if has notion url, perform insert
+  const notionUrl = cpDataObj.NotionUrl;
+  if (notionUrl) {
+    appendBlockToNotion(notionUrl, outputFile);
+  }
+
   newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
 
@@ -661,12 +672,21 @@ function onDocTrigger(e) {
   doc.setName(outputFileName); 
   doc.saveAndClose();
 
+  var outputFile = doc;
+
   if (cpDataObj.Type === SUPPORTED_TYPE.DOC_TO_PDF) {
     doc.setName(doc.getName() + ".pdf");
-    const pdf = convertToPdf_(doc, destinationFolder); // Convert the doc to a PDF file.
+    outputFile = convertToPdf_(doc, destinationFolder); // Convert the doc to a PDF file.
     const docFile = DriveApp.getFileById(doc.getId()); // Get the temporary Google Docs file.
     docFile.setTrashed(true); // Trash the temporary Google Docs file.
   }
+
+  // if has notion url, perform insert
+  const notionUrl = cpDataObj.NotionUrl;
+  if (notionUrl) {
+    appendBlockToNotion(notionUrl, outputFile);
+  }
+
   newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
 
@@ -738,8 +758,35 @@ function onEmailTrigger(e) {
     inlineImages: inlineImages,
     attachments: attachmentFiles
   });
+  
+  // CURRENTLY DISABLED DUE TO REQUIRING ADDITIONAL AUTHORIZATION FOR GMAIL
+  // // if has notion url, perform insert
+  // const notionUrl = cpDataObj.NotionUrl;
+  // if (notionUrl) {
+  //   // Use Gmail API to search for the sent email
+  //   const thread = searchSentEmail(subject);
+  //   if (thread) {
+  //     const messageId = thread.getMessages()[0].getId();
+  //     const emailUrl = `https://mail.google.com/mail/u/0/#inbox/${messageId}`;
+  //     Logger.log({emailUrl})
+  //     appendBlockToNotion(notionUrl, undefined, { emailUrl, emailSubject: subject });
+  //   } else {
+  //     throw new Error('Sent email not found.');
+  //   }
+  // }
+
   newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
+
+// CURRENTLY DISABLED DUE TO REQUIRING ADDITIONAL AUTHORIZATION FOR GMAIL
+// function searchSentEmail(subject) {
+//   const threads = GA.search(`subject:${subject} in:sent`, 0, 1);
+//   if (threads.length > 0) {
+//     return threads[0];
+//   } else {
+//     return null;
+//   }
+// }
 
 function getFormResponses(gFormId) {
   var result = []
@@ -760,7 +807,10 @@ function getFormResponses(gFormId) {
   return result;
 }
 
-// finds all potential variables from google docs and returns an array of unique variables
+/*
+  finds all potential variables from Google Docs/Sheets/Slides templates and returns an array of unique variables
+*/
+
 function getDocsUniqueVariables(cpDataObj) {
   const doc = DocumentApp.openByUrl(cpDataObj.TemplateUrl);
   const body = doc.getBody();
@@ -955,30 +1005,119 @@ function clearActivityHistory() {
 }
 
 /*
+  Notion Integration
+*/
+
+function openNotionKeyPrompt() {
+  return openInputKeyPrompt({
+    propertyName: PROPERTY_NOTION_API_KEY,
+    keyName: "Notion API Key",
+    getKeyUrl: "https://www.notion.so/profile/integrations",
+    keySample: "secret_kuEMMGafwt2kympeBjK8ttxwm78uhgtdMlkCLfEsYEC"
+  })
+}
+
+function appendBlockToNotion(notionUrl, file, { emailUrl, emailSubject }) {
+  const notionApiKey = PropertiesService.getScriptProperties().getProperty(PROPERTY_NOTION_API_KEY);
+  var blockId = extractNotionBlockId(notionUrl);
+
+  if (!notionApiKey) {
+    openNotionKeyPrompt();
+    return;
+  }
+
+  if (!blockId) {
+    Logger.log(`Notion URL invalid: ${notionUrl}`);
+    return false;
+  }
+
+  const url = `https://api.notion.com/v1/blocks/${blockId}/children`;
+
+  var outputUrl, outputName;
+
+  if (file) {
+    outputUrl = file.getUrl();
+    outputName = file.getName();
+  } else if ( emailUrl && emailSubject) {
+    outputUrl = emailUrl;
+    outputName = emailSubject;
+  }
+
+  const headers = {
+    'Authorization': `Bearer ${notionApiKey}`,
+    'Content-Type': 'application/json',
+    'Notion-Version': '2022-06-28'
+  };
+
+  // const data = {
+  //   children: [
+  //     {
+  //       object: 'block',
+  //       type: 'file',
+  //       file: {
+  //         type: 'external',
+  //         external: {
+  //           url: outputUrl
+  //         }
+  //       }
+  //     }
+  //   ]
+  // }
+
+  const data = {
+    children: [
+      {
+        object: 'block',
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            {
+              type: 'text',
+              text: {
+                content: outputName,
+                link: {
+                  url: outputUrl
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  };
+
+  const options = {
+    method: 'patch',
+    contentType: 'application/json',
+    headers: headers,
+    payload: JSON.stringify(data),
+    muteHttpExceptions: true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const responseData = JSON.parse(response.getContentText());
+    console.log('Block added:', responseData);
+    return true;
+  } catch (error) {
+    console.error('Error adding block:');
+    console.log(JSON.stringify(error));
+    newActivityLog(`Notion insertion for process '${cpDataObj.Name}' failed!`);
+    return false;
+  }
+}
+
+/*
   Gemini Integration
 */
 
 function openGeminiKeyPrompt() {
-  const scriptProperties = PropertiesService.getScriptProperties();
-  const response = SpreadsheetApp.getUi().prompt(`Key (${scriptProperties.getProperty(PROPERTY_GEMINI_API_KEY)})\n\nTo remove your Gemini API Key, enter 'UNSET'.`)
-  const responseText = response.getResponseText();
-  const responseButton = response.getSelectedButton();
-  if (responseButton == "CLOSE") return;
-  if (!responseText) {
-    SpreadsheetApp.getUi().alert("Gemini API Key can not be empty!\n\nGet your Gemini API Key here: https://aistudio.google.com/app/apikey\nIt looks something like this: 'AIz124CrPasyiPTVcZxsr-dinuertTw-P229bQc'");
-    return;
-  }
-  if (responseText.length != 39) {
-    if (responseText == 'UNSET') {
-      scriptProperties.deleteProperty(PROPERTY_GEMINI_API_KEY);
-      SpreadsheetApp.getUi().alert("Your Gemini API Key is removed!");
-      return;
-    }
-    SpreadsheetApp.getUi().alert("Gemini API Key is invalid!\n\nGet your Gemini API Key here: https://aistudio.google.com/app/apikey\nIt looks something like this: 'AIz124CrPasyiPTVcZxsr-dinuertTw-P229bQc'");
-    return;    
-  }
-  scriptProperties.setProperty(PROPERTY_GEMINI_API_KEY, responseText);
-  return true;
+  return openInputKeyPrompt({
+    propertyName: PROPERTY_GEMINI_API_KEY,
+    keyName: "Gemini API Key",
+    getKeyUrl: "https://aistudio.google.com/app/apikey",
+    keySample: "AIz124CrPasyiPTVcZxsr-dinuertTw-P229bQc"
+  });
 }
 
 const properties = PropertiesService.getScriptProperties().getProperties();
@@ -998,7 +1137,7 @@ function openGeminiPrompt(hasKey=false) {
     .setWidth(450)
     .setSandboxMode(HtmlService.SandboxMode.IFRAME);
   
-  SpreadsheetApp.getUi().showModalDialog(ui, 'Create Process with Gemini');
+  SpreadsheetApp.getUi().showModalDialog(ui, 'Co-Create Process with Gemini');
 }
 
 function runGemini(selectedType, textDescription, rerun = 0) {
@@ -1010,10 +1149,10 @@ function runGemini(selectedType, textDescription, rerun = 0) {
   ) {
     prePrompt = `Create a document template with up to a maximum of 10 placeholders within the template content, surrounded by double curly brackets ({{}}). Placeholders should be named descriptively (e.g., {{Date}}, {{Company Name}}). Adhere to the specified template type (e.g., letter, report, email). Use double asterisks (** **) for bold and double underscores (__ __) for underline formatting.
 
-Generate a suitable file name without extensions, preferably with spaces, or a subject line for email templates. Make sure to not include the email subject as part of the template content for email templates. Create a process label name based on the provided description.
+Generate a suitable file name without extensions, preferably with spaces, or a subject line for email templates. Create a process label name based on the provided description.
 
 Output format:
-<TEMPLATE_CONTENT>[template content]</TEMPLATE_CONTENT>
+<TEMPLATE_CONTENT>[template content (Do not include subject name)]</TEMPLATE_CONTENT>
 <FILE_NAME>[suggested file name]</FILE_NAME>
 <EMAIL_SUBJECT>[if type is "Email", suggested email subject]</EMAIL_SUBJECT>
 <PROCESS_NAME>[suggested short and concise process label name]</PROCESS_NAME>
@@ -1023,7 +1162,7 @@ Output format:
     selectedType === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
     selectedType === SUPPORTED_TYPE.SLIDE_TO_PDF
   ) {
-    prompt = `Prepare a slide deck for the purpose of ${textDescription}. Generate between 5 and 15 slides, adjusting the number based on the complexity of the topic. Please generate main bullet points (up to 8 per slide) with between 1-3 placeholders each, surrounded by double curly brackets ({{}}). Placeholders should be embedded within sentences or bullet points, not standalone. Placeholders should be named descriptively, preferably with space. Avoid nested placeholders. Keep the title of each slide short and concise. Generate a suitable file name with at least 1 placeholder for this deck, without extensions, preferably with spaces. Create a process label name based on the purpose. Create a suitable topic as text shown before the deck. Please produce the result as a valid JSON (e.g., {"topic": "[topic]", "fileName": "[file name]", "processLabel": [process label name]", "slides": [{"title": "[slide 1 title]","body": []},{"title": "[slide 2 title]","body": []}]}) so that I can pass it to other APIs.`;
+    prompt = `Prepare a slide deck for the purpose of ${textDescription}. Generate between 5 and 15 slides, adjusting the number based on the complexity of the topic. Please generate main bullet points (up to 5 per slide) with between 1-3 placeholders each, surrounded by double curly brackets ({{}}). Placeholders should be embedded within sentences, not standalone. Placeholders should be named descriptively, preferably with space. Avoid nested placeholders. Keep the title of each slide short and concise, must not include or indicate which slide the title is for. Generate a suitable file name with at least 1 placeholder for this deck, without extensions, preferably with spaces. Create a process label name based on the purpose. Create a suitable topic as text shown before the deck. Please produce the result as a valid JSON (e.g., {"topic": "[topic]", "fileName": "[file name]", "processLabel": [process label name]", "slides": [{"title": "[slide 1 title]","body": []},{"title": "[slide 2 title]","body": []}]}) so that I can pass it to other APIs.`;
   }
 
   if (rerun > 0 && rerun < 5) {

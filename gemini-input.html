@@ -135,12 +135,35 @@
         resize: none;
         overflow: hidden;
       }
+
+      #char-counter {
+        position: absolute;
+        bottom: -15px;
+        right: 5px;
+        font-size: 12px;
+        color: gray;
+      }
+
+      .textarea-container {
+        position: relative;
+        display: inline-block;
+      }
+
+      #description {
+        width: 100%;
+        box-sizing: border-box;
+      }
     </style>
     <script>
       function onSubmit() {
         var selectedType = document.getElementById("type").value;
         var textDescription = document.getElementById("description").value;
         if (!(selectedType && textDescription)) {
+          document.getElementById("description").reportValidity();
+          return;
+        }
+        if (textDescription.length < 5 || textDescription.length > 300) {
+          document.getElementById("description").reportValidity();
           return;
         }
 
@@ -170,7 +193,11 @@
       <form action="" method="get">
         <div class="main-content-sections">
           <label for="description">Purpose of Template :</label>
-          <textarea rows="1" name="description" id="description" placeholder="Briefly describe your template (ex. Product Inquiry)" autofocus required></textarea>
+          <div class="textarea-container">
+            <textarea rows="1" name="description" id="description" placeholder="Briefly describe your template (ex. Product Inquiry)" minlength="5" maxlength="300" autofocus required></textarea>
+
+            <div id="char-counter">0/300</div>
+          </div>
         </div>
 
         <div class="main-content-sections">
@@ -199,6 +226,8 @@
 
       document.addEventListener('DOMContentLoaded', function() {
         const textarea = document.getElementById('description');
+        const charCounter = document.getElementById('char-counter');
+        const maxLength = 300;
 
         textarea.addEventListener('keypress', e => {
           if (e.key === 'Enter' && !e.shiftKey) {
@@ -210,7 +239,10 @@
 
         textarea.addEventListener('input', function() {
           this.style.height = 'auto'; // Reset the height
-          this.style.height = (this.scrollHeight - 10) + 'px'; // Set the height to the scroll height
+          this.style.height = (this.scrollHeight + 2) + 'px'; // Set the height to the scroll height
+          
+          // Update character counter
+          charCounter.textContent = `${this.value.length}/${maxLength}`;
         });
       });
     </script> 

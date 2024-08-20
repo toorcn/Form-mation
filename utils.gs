@@ -307,8 +307,9 @@ function getNotionUrlType(notionUrl) {
 
   const response = UrlFetchApp.fetch(url, options);
   const responseData = JSON.parse(response.getContentText());
-  if (responseData.status === 400) {
-    return false;
+  console.log({responseData})
+  if (responseData.status === 400 || responseData.status === 401) {
+    return { message: responseData.message };
   }
 
   var is_toggleable;
@@ -324,13 +325,24 @@ function getNotionUrlType(notionUrl) {
 
 function isSupportChildBlockNotion(notionUrl) {
   const res = getNotionUrlType(notionUrl);
-  if (!res) return res;
+  console.log({res})
+  if (!res.type && res.message) {
+    const ui = SpreadsheetApp.getUi();
+    switch (res.message) {
+      case 'path failed validation: path.block_id should be a valid uuid, instead was `"null"`.':
+        return false;
+      case "API token is invalid.":
+        ui.alert(`Notion Authorization Error`, `Your Notion API Key may be invalid or you have not given your Notion Integration access to your Notion Page. Please correct the error for it to work.`, ui.ButtonSet.OK);
+        return res;
+    }
+  }
   if (res.is_toggleable) return res.type;
+  console.log(`isSupportChildBlockNotion type:${res.type} `);
   if (
     NOTION_SUPPORTED_TYPE.includes(res.type) &&
     res.is_toggleable === undefined
   ) {
-    return res.type
+    return res.type;
   }
   return false;
 }
@@ -357,7 +369,7 @@ function openInputKeyPrompt({
       ui.alert(`Setting ${keyName} success!`, `Your ${keyName} is removed!`, ui.ButtonSet.OK);
       return;
     }
-    SpreadsheetApp.getUi().alert(`Setting your ${keyName}`, `${keyName} is invalid!\n\nGet your ${keyName} here: ${getKeyUrl}\nIt looks something like this: '${keySample}'`, ui.ButtonSet.OK);
+    ui.alert(`Setting your ${keyName}`, `${keyName} is invalid!\n\nGet your ${keyName} here: ${getKeyUrl}\nIt looks something like this: '${keySample}'`, ui.ButtonSet.OK);
     return;    
   }
   scriptProperties.setProperty(propertyName, responseText);

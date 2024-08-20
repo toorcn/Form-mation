@@ -4,6 +4,11 @@
     <base target="_top">
     <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,300" rel="stylesheet" type="text/css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script>
+      function openInstructionPage(url) {
+        google.script.run.openInstructionPage(url);
+      }
+    </script>
   </head>
   <style>
     body{
@@ -41,16 +46,21 @@
     .refresh-button:hover, .submit:hover{
       background-color: #3045BD;
     }
-    .quota, .usage{
+    .quota, .usage, .history{
       padding-left:15px;
       margin-top:15px;
       margin-bottom:5px;
+    }
+    .usage-information-sections{
+      padding-left:15px;
+      margin-bottom:5px;
+      margin-top:18px;
     }
     .dropdown-list{
       list-style:none;
       padding:0;
       margin: 0 15px;
-      margin-bottom:20px;
+      margin-bottom:30px;
     }
     .dropdown-list li{
       background-color:#f2f2f2;
@@ -67,8 +77,9 @@
       cursor:pointer;
       transition: 0.3s;
     }
-    .question h5{
-      margin: 0 15px;
+    .question p{
+      margin: 0;
+      font-size: 14px;
     }
     .question:focus, .question:hover, .question:hover .arrow{
       border-left-color: #4056F4;
@@ -90,9 +101,16 @@
       height:0;
       transition:0.3s;
     }
+    .answer h5{
+      margin-top:10px;
+      margin-bottom:10px;
+      line-height: normal;
+    }
     .answer p{
       line-height:20px;
       font-size:14px;
+      margin:0;
+      margin-bottom:5px;
     }
     .answer div{
       padding:3px;
@@ -106,6 +124,7 @@
       background-color:#f2f2f2;
       height:50dvh;
       margin:0 15px;
+      margin-top:5px;
       padding:0 15px;
       overflow-y:scroll;
       list-style:none;
@@ -140,7 +159,26 @@
       .activity-details{
         font-size: 14px;
       }
+    }
 
+    .process-initiation{
+      display:flex;
+      flex-direction:row;
+      align-items:center;
+      gap:10px;
+      font-size:14px;
+      cursor:pointer;
+      padding:10px 15px;
+      transition: .3s;
+
+      &:hover{
+        background-color: #4056F4;
+        color:white;
+      }
+    }
+    .guide{
+      margin:0;
+      font-size:14px;
     }
     .activity-log::-webkit-scrollbar{
       width: 5px;
@@ -159,24 +197,36 @@
   </style>
 
   <body>
-    <div class="refresh-section">
+    <!-- <div class="refresh-section">
       <span style="font-size:10px;"><i>Information as of <span id="current-date"><?= getCurrentDate() ?></span>
       </i></span>
       <button type="button" class="refresh-button" onclick="refresh()"><i class="fa fa-refresh"></i> Refresh</button>
     </div>
 
     <h4 class="quota">Quota Remaining</h4>
-    <p style="padding:0 25px;margin-top:0px;margin-bottom:30px;">Email : <span id="quota-email"><?= getEmailQuota() ?></span></p>
+    <p style="padding:0 25px;margin-top:0px;margin-bottom:30px;">Email : <span id="quota-email"><?= getEmailQuota() ?></span></p> -->
 
-    <div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;padding:0 15px;margin-top:15px;margin-bottom:5px;">
-      <h4 class="usage" style="margin:0;">Usage Information</h4>
-      <input id="submit" class="submit" type="submit" value="See Details" onclick="window.open('https://docs.google.com/document/d/1moPFLLEPY92SxJPnF1Pszdktjk_y3QMcXAoW9gEWcPs/edit?usp=sharing', '_blank');" />
-    </div>
+    <h4 class="usage">Usage Information</h4>
+    
+    <h5 class="usage-information-sections">Guides</h5>
+    <div style="margin:0 15px;height:1.5px;background:#4056F4;margin-bottom:5px;"></div>
+    <ul class="dropdown-list">
+      <li class="process-initiation" onclick="openInstructionPage('https://scribehow.com/shared/Setting_up_Notion_Integration_Form-mation__1bqC_0JERT6s04nV5g2NPw')">
+        <p class="guide">Get Notion API Key</p>
+      </li>
+      
+      <li class="process-initiation" onclick="openInstructionPage('https://scribehow.com/shared/Integrate_Form-mation_output_into_a_Notion_Page__MEQlyj8aT62zVaFLxwxKPw')">
+        <p class="guide">Set-up process output to Notion</p>
+      </li>
+    </ul>
+
+    <h5 class="usage-information-sections">FAQs</h5>
+    <div style="margin:0 15px;height:1.5px;background:#4056F4;margin-bottom:5px;"></div>
     <ul class="dropdown-list">
       <li>
         <div class="question">
           <span class="arrow"></span>
-          <h5>Text Placeholder</h5>
+          <p>Text Placeholder</p>
         </div>
         <div class="answer">
           <div>
@@ -193,9 +243,12 @@
       <li>
         <div class="question">
           <span class="arrow"></span>
-          <h5>Placeholder Image (Email, Doc-to-Doc, Doc-to-PDF)</h5>
+          <p>Image Placeholder</p>
         </div>
         <div class="answer">
+          <div>
+            <h5>- Type:Email, Doc-to-Doc, Doc-to-PDF -</h5>
+          </div>
           <div>
             <h5>Format</h5>
             <p>{{IMG-[S/M/L/Pixel Width]_[name]}}</p>
@@ -204,15 +257,9 @@
             <h5>Example</h5>
             <p>{{IMG-M_population}} or {{IMG-600_sales}}</p>
           </div>
-        </div>
-      </li>
-
-      <li>
-        <div class="question">
-          <span class="arrow"></span>
-          <h5>Placeholder Image (Slide-to-Slide, Slide-to-PDF)</h5>
-        </div>
-        <div class="answer">
+          <div>
+            <h5>- Type:Slide-to-Slide, Slide-to-PDF -</h5>
+          </div>
           <div>
             <h5>Format</h5>
             <p>{{IMG_[name]}}</p>
@@ -222,30 +269,166 @@
             <p>{{IMG_Company Logo}}</p>
           </div>
           <p style="font-size:12px;padding:3px;">Note : The size of the image is only determined/limited by the size of the text box the placeholder belongs to (the image placeholder text must be at the start of the text box and any other text in the textbox is not maintained as the image replaces the whole text box)</p>
+          <div>
+            <h5>- General Information -</h5>
+          </div>
+          <div>
+            <h5>Supported Image Types</h5>
+            <p>JPG, PNG</p>
+          </div>
+          <div>
+            <h5>Supported Process Types</h5>
+            <p>Email, Doc-to-Doc, Doc-to-PDF, Slide-to-Slide, Slide-to-PDF</p>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <p>What is a Process?</p>
+        </div>
+        <div class="answer">
+          <div>
+            <p style="font-size:12px;padding:3px;white-space: pre-line">A Process is a defined set of steps or actions that the application follows to generate a specific output.
+
+It involves:
+
+- <strong>Defining the output type:</strong> Document, email, presentation, etc.
+- <strong>Creating a template:</strong> Designing the structure of the output.
+- <strong>Using placeholders:</strong> Inserting dynamic elements into the template.
+- <strong>Generating the final output:</strong> Creating the desired document or file based on the template and provided data.
+
+In short, a Process is a blueprint for automating the creation of various documents or files.</p>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <p>What should I do if I encounter an error?</p>
+        </div>
+        <div class="answer">
+          <div>
+            <h5>Check Error</h5>
+            <p style="font-size:12px;padding:3px;">On the 'Active' column of your process, hover over it to see the error. Correct it, activate it and validate.</p>
+          </div>
+          <div>
+            <h5>Let us know</h5>
+            <p style="font-size:12px;padding:3px;">If the error persist, please report to us with detailed information. (Form-mation -> Help Form-mation improve)</p>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <p>Why is my Google Form asking for text input when it should be image upload</p>
+        </div>
+        <div class="answer">
+          <p style="font-size:12px;padding:3px;">As it is a limitation from Google that we aren't able to automatically populate the form with image upload inputs. We apologise for the inconvenience.</p>
+          <div>
+            <h5>Changing Google Form text input to file upload (image)</h5>
+            <p style="font-size:12px;padding:3px;">Go to the 'GForms Link (Edit Link)' column of your process, open the link. Scroll down until you see the input that is to-be image upload. Click on it and on the right side click 'Paragraph' then select 'File upload' and 'Continue'. Then enable 'Allow only specific file types' and select 'Image'. Lastly, delete the '[CHANGE THIS TO 'File upload' TYPE -> 'Allow only specific file types' -> 'Image']' from the item description.</p>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <p>I updated the placeholders in a template, do I need to do anything?</p>
+        </div>
+        <div class="answer">
+          <div>
+            <h5>No.</h5>
+            <p style="font-size:12px;padding:3px;">When validating, Form-mation automatically updates your Google Forms with the new placeholders.</p>
+          </div>
+
+          <p style="font-size:12px;padding:3px;">If you removed placeholders and no longer want it to be in your Google Forms, please refer to <i>'My Google Forms is getting quite messy or there seems to be a problem'</i>. We would discourage you from manually deleting the form item as it may cause unexpected behavior.</p>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <p>What happens if I delete a placeholder from the template?</p>
+        </div>
+        <div class="answer">
+          <div>
+            <p style="font-size:12px;padding:3px;">Everything will continue to function as usual, but if you wish to remove the placeholder from Google Forms, please refer to <i>'My Google Forms is getting quite messy or there seems to be a problem'</i>. We would discourage you from manually deleting the form item as it may cause unexpected behavior.</p>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <p>Can I reuse templates?</p>
+        </div>
+        <div class="answer">
+          <div>
+            <h5>Yes, absolutely you can!</h5>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <p>My Google Forms is getting quite messy or there seems to be a problem</p>
+        </div>
+        <div class="answer">
+          <div>
+            <h5>Resetting your Google Forms</h5>
+            <p style="font-size:12px;padding:3px;">If you're encountering issues with your Google Form, you can try resetting it. To do this, locate the "GForms Link (Edit Link)" column in your process. Select this cell and all cells to its right (which contain placeholders). Delete the selected cells and then click "Validate" to generate a new Google Form.</p>
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="question">
+          <span class="arrow"></span>
+          <p>Notion Block Types</p>
+        </div>
+        <div class="answer">
+          <div>
+            <h5>Supported Block Types</h5>
+            <p style="font-size:12px;padding:3px;">'bulleted_list_item', 'callout', 'child_database', 'child_page', 'column', 'numbered_list_item', 'paragraph', 'quote', 'synced_block', 'template', 'to_do', 'toggle', 'table'</p>
+          </div>
+          <div>
+            <h5>Known Tested Block Types</h5>
+            <p style="font-size:12px;padding:3px;">'bulleted_list_item','numbered_list_item', 'paragraph', 'table'</p>
+          </div>
+          <p style="font-size:12px;padding:3px;">Note : If any of the listed supported Notion block types does not work as expected, please report to us. (Form-mation -> Help Form-mation improve)</p>
         </div>
       </li>
     </ul>
     
-    <div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;padding:0 15px;margin-top:15px;margin-bottom:5px;">
-      <h4 class="history" style="margin:0;">Activity History</h4>
+    <div style="display:flex;flex-direction:row;align-items:center;justify-content:space-between;padding:0 15px;margin-top:15px;">
+      <h4 class="history" style="padding:0">Activity History</h4>
       <input id="submit" class="submit" type="submit" value="Clear Logs" onclick="onClearLog()" />
     </div>
-    <ul class="dropdown-list">
-      <li>
-        <div class="question">
-          <span class="arrow"></span>
-          <h5>Open Logs</h5>
-        </div>
-        <div class="answer">
-          <ul class="activity-log" id="activity-log">
-            <?!= getActivityHistory() ?>
-          </ul>
-        </div>
-      </li>
+
+
+    <div class="refresh-section">
+      <span style="font-size:10px;"><i>As of <span id="current-date"><?= getCurrentDate() ?></span>
+      </i></span>
+      <button type="button" class="refresh-button" onclick="refresh()"><i class="fa fa-refresh"></i> Refresh</button>
+    </div>
+    <ul class="activity-log" id="activity-log">
+      <?!= getActivityHistory() ?>
     </ul>
 
   </body>
 
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <script>
+    $(document).ready(function(){
+      $(".process-initiation").prepend("<i class='fa fa-chevron-right'></i>");
+    });
+  </script>
   <script>
     const question = document.querySelectorAll('.question'),
     answer = document.querySelectorAll('.answer'),
@@ -289,7 +472,6 @@
       google.script.run.withSuccessHandler((value) => {
         currentDate.innerHTML = value;
       }).getCurrentDate();
-      
     }
   </script>
 </html>

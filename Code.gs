@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 4.4
-  Last Modified: 19 August 2024 3:40PM GMT+8
+  Version: 4.5
+  Last Modified: 21 August 2024 1:40AM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
@@ -22,7 +22,7 @@ const PROPERTY_NOTION_API_KEY = "NOTION_API_KEY";
 const PROPERTY_ACTIVITY_LOG = "ACTIVITY_LOG";
 
 // https://developers.notion.com/reference/block#block-types-that-support-child-blocks
-const NOTION_SUPPORTED_TYPE = ['bulleted_list_item', 'callout', 'child_database', 'child_page', 'column', 'heading_1', 'heading_2', 'heading_3', 'numbered_list_item', 'paragraph', 'quote', 'synced_block', 'table', 'template', 'to_do', 'toggle'];
+const NOTION_SUPPORTED_TYPE = ['bulleted_list_item', 'callout', 'child_database', 'child_page', 'column', 'numbered_list_item', 'paragraph', 'quote', 'synced_block', 'template', 'to_do', 'toggle', 'table'];
 
 const SUPPORTED_TYPE = {
   EMAIL: "Email",
@@ -88,7 +88,14 @@ function addRowBlank(type) {
     type === SUPPORTED_TYPE.DOC_TO_PDF ||
     type === SUPPORTED_TYPE.EMAIL
   ) {
-    const newDoc = DocumentApp.create("Document Template");
+    var newDoc;
+    if (type === SUPPORTED_TYPE.EMAIL) {
+      newDoc = DocumentApp.create("Email Template");
+      processName = "Email Process";
+    } else {
+      newDoc = DocumentApp.create("Document Template");
+      processName = "Document Process";
+    }
     DriveApp.getFileById(newDoc.getId()).moveTo(getProjectFolder());
     if (type === SUPPORTED_TYPE.EMAIL) {
       newDoc.getBody().setMarginBottom(0);
@@ -97,7 +104,6 @@ function addRowBlank(type) {
       newDoc.getBody().setMarginTop(0);
     }
 
-    processName = "Document Process";
     templateUrl = `https://docs.google.com/document/d/${newDoc.getId()}/edit`;
   } else if (
     type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
@@ -158,21 +164,42 @@ function addRowConversion(type) {
 }
 
 function openFeedback() {
-  var ui = HtmlService.createHtmlOutputFromFile('feedback-page')
-    .setHeight(500)
-    .setWidth(500);
-  SpreadsheetApp.getUi().showModalDialog(ui, "Help Form-mation improve");
+  const title = 'Help Form-mation improve';
+  var template = HtmlService.createTemplateFromFile('iframe-page');
+  template.pageUrl = "https://forms.gle/zXCRRJ6qjaBcoLWG7";
+  template.title = title;
+  var htmlOutput = template.evaluate()
+    .setWidth(500)
+    .setHeight(500);
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, title);
 }
 
 function onEdit(e) {
   const range = e.range;
+  const column = range.getColumn();
+  const row = range.getRow();
+
   range.clearNote();
+
+  if (column === 1 && range.getValue() === false) {
+    removeProcessNameHyperlink(row);
+    range.setNote('Heads up! To deactivate a process, validate again.');
+  }
+}
+
+// remove hyperlink to publish URL of Name
+function removeProcessNameHyperlink(row) {  
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const processName = sheet.getRange(row, SETUP_MAIN_COLUMN.indexOf("Name")+1).getValue();
+  sheet.getRange(row, SETUP_MAIN_COLUMN.indexOf("Name")+1).setValue(processName);
 }
 
 // Main function for validation
 function reload() {
   var errorMsgs = [];
   var errorMsg = "";
+  var processSuccessCount = 0;
+  var processFailCount = 0;
 
   deleteAllTrigger();
 
@@ -200,8 +227,52 @@ function reload() {
       , row, errorMsg)
     ) {
       errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+      processFailCount++;
       continue;
     };
+
+    // test if user has permission to links (template, folder, forms)
+    try {
+      FormApp.openByUrl(cpSetupObj.GFormUrl).getEditors();
+      if (
+        cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC ||
+        cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
+        cpSetupObj.Type === SUPPORTED_TYPE.EMAIL
+      ) { DocumentApp.openByUrl(cpSetupObj.TemplateUrl); }
+      if (
+        cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
+        cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF
+      ) { SlidesApp.openByUrl(cpSetupObj.TemplateUrl); }
+      if (
+        cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
+        cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF
+      ) { SpreadsheetApp.openByUrl(cpSetupObj.TemplateUrl); }
+      if (cpSetupObj.Type != SUPPORTED_TYPE.EMAIL) {
+        DriveApp.getFolderById(getIdFromUrl(cpSetupObj.GDriveOutputUrl));
+      }
+    } catch (error) {
+      processFailCount++;
+      errorMsg = `You do not have permission to use one of the links of this process, please check the file permission and try again.`;
+      if (
+        disableRow(error == 'Exception: Action not allowed'
+        , row, errorMsg)
+      ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        continue;
+      }
+      if (
+        disableRow(error == 'Exception: No item with the given ID could be found. Possibly because you have not edited this item or you do not have permission to access it.'
+        , row, errorMsg)
+      ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        continue;
+      }
+      errorMsg = `Unexpected error when checking file access. Error: ${error}`;
+      disableRow(true, row, errorMsg);
+      errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+      Logger.log(`Uncaught error when checking file access for process: ${cpSetupObj.Name}, error: ${error}`);
+      continue;
+    }
 
     if (
       cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC ||
@@ -213,6 +284,7 @@ function reload() {
         disableRow(!cpSetupObj.TemplateUrl.startsWith("https://docs.google.com/document/d/"), row, errorMsg)
       ) {
         errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        processFailCount++;
         continue;
       }
       // check if row does not have GFormUrl and Variables filled
@@ -260,6 +332,7 @@ function reload() {
         , row, errorMsg)
       ) {
         errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        processFailCount++;
         continue;
       }
       // check if row does not have GFormUrl and Variables filled
@@ -277,6 +350,12 @@ function reload() {
         // update cpSetupObj for the remainder of this process
         cpSetupObj.GFormUrl = newGFormLink;
         cpSetupObj.Variables = uVariables;
+      } else {
+        // update control panel and form items of new variables found in template
+        cpSetupObj = updateVariablesFromTemplate(cpSetupObj, row);
+        // update form confirmation message with newest GDriveOutputUrl
+        const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
+        form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpSetupObj.GDriveOutputUrl);
       }
     } else if (
       cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
@@ -289,6 +368,7 @@ function reload() {
         , row, errorMsg)
       ) {
         errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        processFailCount++;
         continue;
       }
       // check if row does not have GFormUrl and Variables filled
@@ -306,6 +386,12 @@ function reload() {
         // update cpSetupObj for the remainder of this process
         cpSetupObj.GFormUrl = newGFormLink;
         cpSetupObj.Variables = uVariables;
+      } else {
+        // update control panel and form items of new variables found in template
+        cpSetupObj = updateVariablesFromTemplate(cpSetupObj, row);
+        // update form confirmation message with newest GDriveOutputUrl
+        const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
+        form.setConfirmationMessage("Thank you for using Form-mation!\n\nGoogle Drive Folder: " + cpSetupObj.GDriveOutputUrl);
       }
     }
 
@@ -317,6 +403,7 @@ function reload() {
       , row, errorMsg)
     ) {
       errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+      processFailCount++;
       continue;
     }
 
@@ -327,18 +414,20 @@ function reload() {
       , row, errorMsg)
     ) {
       errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+      processFailCount++;
       continue;
     }
 
     if (cpSetupObj.Type === SUPPORTED_TYPE.EMAIL) {
       // if row does not have "EMAIL" as first variable, will disable row
-      errorMsg = "For Type 'Email', the first variable in the Control Panel must be 'EMAIL'.";
+      errorMsg = "For Type 'Email', the first placeholder of the process must be 'EMAIL'.";
       if (
         disableRow(
           (!cpSetupObj.Variables[0] || cpSetupObj.Variables[0] != "EMAIL")
         , row, errorMsg)
       ) {
         errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        processFailCount++;
         continue;
       }
       createTrigger(cpSetupObj, "onEmailTrigger");
@@ -351,6 +440,7 @@ function reload() {
         , row, errorMsg)
       ) {
         errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        processFailCount++;
         continue;
       }
 
@@ -361,25 +451,25 @@ function reload() {
         , row, errorMsg)
       ) {
         errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        processFailCount++;
         continue;
       }
 
       if (cpSetupObj.NotionUrl) {
-        if (cpSetupObj.Type !== SUPPORTED_TYPE.EMAIL) { // CURRENTLY DISABLED DUE TO REQUIRING ADDITIONAL AUTHORIZATION FOR GMAIL
-          // has key
-          const notionApiKey = PropertiesService.getScriptProperties().getProperty(PROPERTY_NOTION_API_KEY);
-          if (!notionApiKey) {
-            openNotionKeyPrompt();
-          }
-          // is support
-          errorMsg = `'(Optional) Notion Link' contains an invalid or unsupported Notion Block link. Refer to this for supported Notion block types: https://developers.notion.com/reference/block#block-types-that-support-child-blocks`;
-          if (
-            disableRow(!isSupportChildBlockNotion(cpSetupObj.NotionUrl)
-            , row, errorMsg)
-          ) {
-            errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
-            continue;
-          }
+        // has key
+        const notionApiKey = PropertiesService.getScriptProperties().getProperty(PROPERTY_NOTION_API_KEY);
+        if (!notionApiKey) {
+          openNotionKeyPrompt();
+        }
+        // is support
+        errorMsg = `'(Optional) Notion Link' contains an invalid or unsupported Notion Block link. Supported Notion block types: ${NOTION_SUPPORTED_TYPE.join(", ")}`;
+        if (
+          disableRow(!isSupportChildBlockNotion(cpSetupObj.NotionUrl)
+          , row, errorMsg)
+        ) {
+          errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+          processFailCount++;
+          continue;
         }
       }
 
@@ -388,16 +478,19 @@ function reload() {
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC
       ) {
         createTrigger(cpSetupObj, "onDocTrigger");
+        processSuccessCount++;
       } else if (
         cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_SLIDE ||
         cpSetupObj.Type === SUPPORTED_TYPE.SLIDE_TO_PDF
       ) {
         createTrigger(cpSetupObj, "onSlideTrigger");
+        processSuccessCount++;
       } else if (
         cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_SHEET ||
         cpSetupObj.Type === SUPPORTED_TYPE.SHEET_TO_PDF
       ) {
         createTrigger(cpSetupObj, "onSheetTrigger");
+        processSuccessCount++;
       }
     }
 
@@ -419,7 +512,7 @@ function reload() {
     ui.alert("Validation Issues Detected", `These processes are currently disabled due to an error.\nHover over the 'Active' cell of the error causing process for more information. Resolve the underlying issue, re-enable the process, and re-validate.\n\n` + alertMsg, ui.ButtonSet.OK);
   }
 
-  newActivityLog(`Ran validation.`);
+  newActivityLog(`Validation Status: ${processSuccessCount} (Validated), ${processFailCount} (Invalidated)`);
 }
 
 function updateNameWithFormPushlishedUrl(cpSetupObj, row) {
@@ -550,7 +643,7 @@ function onSheetTrigger(e) {
   // if has notion url, perform insert
   const notionUrl = cpDataObj.NotionUrl;
   if (notionUrl) {
-    appendBlockToNotion(notionUrl, outputFile);
+    appendBlockToNotion(notionUrl, outputFile, undefined, cpDataObj);
   }
 
   newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
@@ -576,35 +669,48 @@ function onSlideTrigger(e) {
   const copy = gSlidesTemplate.makeCopy("[FORM-MATION | PROCESSING] " + cpDataObj.Name, destinationFolder);
   const slides = SlidesApp.openById(copy.getId());
 
-  try {
-    slides.getSlides().forEach(function(slide) {
-      var shapes = (slide.getShapes());
+  slides.getSlides().forEach(function(slide) {
+    var shapes = (slide.getShapes());
 
-      shapes.forEach(function(shape) {
-        for (var j = 0; j < cpDataObj.Variables.length; j++) {
-          const variableName = cpDataObj.Variables[j];
-          const replacementData = formResponseData[j];
+    var imageObj = {};
 
-          if (
-            variableName.startsWith("IMG") && 
-            shape.getText().asString().toString().startsWith(VAR_PREFIX + variableName) &&
-            replacementData.toString().length > 30 && 
-            fileExist(replacementData)
-          ) {
-            Logger.log("VarName: " + variableName + ", ReplaceData:" + replacementData);
-            var image = DriveApp.getFileById(replacementData).getBlob();
-            shape.replaceWithImage(image);
-            continue;
-          }
+    shapes.forEach(function(shape) {
+      for (var j = 0; j < cpDataObj.Variables.length; j++) {
+        const variableName = cpDataObj.Variables[j];
+        const replacementData = formResponseData[j];
 
-          shape.getText().replaceAllText(VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
-          outputFileName = strReplaceAll(outputFileName, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
+        if (
+          variableName.startsWith("IMG") && 
+          shape.getText().asString().toString().startsWith(VAR_PREFIX + variableName) &&
+          replacementData.toString().length > 30 && 
+          fileExist(replacementData)
+        ) {
+          imageObj[variableName] = DriveApp.getFileById(replacementData).getBlob();
+          continue;
         }
-      }); 
+
+        shape.getText().replaceAllText(VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
+        outputFileName = strReplaceAll(outputFileName, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
+      }
     });
-  } catch (err) {
-    console.log(`Slides replace with image err: ${err}`);
-  }
+
+    var currentVar;
+    try {
+      shapes.forEach(function(s) {
+        var text = s.getText().asString();
+        currentVar = text;
+        text = strReplaceAll(text, '\n', '');
+        text = text.match(uvRegex);
+        if (text) {
+          text = text[0];
+          currentVar = text;
+          if (imageObj[text]) s.replaceWithImage(imageObj[text]);
+        }
+      });
+    } catch (err) {
+      console.log(`Slides replace '${currentVar}' with image err: ${err}`);
+    }
+  });
 
   slides.setName(outputFileName);  
   slides.saveAndClose();
@@ -622,7 +728,7 @@ function onSlideTrigger(e) {
   // if has notion url, perform insert
   const notionUrl = cpDataObj.NotionUrl;
   if (notionUrl) {
-    appendBlockToNotion(notionUrl, outputFile);
+    appendBlockToNotion(notionUrl, outputFile, undefined, cpDataObj);
   }
 
   newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
@@ -684,7 +790,7 @@ function onDocTrigger(e) {
   // if has notion url, perform insert
   const notionUrl = cpDataObj.NotionUrl;
   if (notionUrl) {
-    appendBlockToNotion(notionUrl, outputFile);
+    appendBlockToNotion(notionUrl, outputFile, undefined, cpDataObj);
   }
 
   newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
@@ -758,35 +864,18 @@ function onEmailTrigger(e) {
     inlineImages: inlineImages,
     attachments: attachmentFiles
   });
-  
-  // CURRENTLY DISABLED DUE TO REQUIRING ADDITIONAL AUTHORIZATION FOR GMAIL
-  // // if has notion url, perform insert
-  // const notionUrl = cpDataObj.NotionUrl;
-  // if (notionUrl) {
-  //   // Use Gmail API to search for the sent email
-  //   const thread = searchSentEmail(subject);
-  //   if (thread) {
-  //     const messageId = thread.getMessages()[0].getId();
-  //     const emailUrl = `https://mail.google.com/mail/u/0/#inbox/${messageId}`;
-  //     Logger.log({emailUrl})
-  //     appendBlockToNotion(notionUrl, undefined, { emailUrl, emailSubject: subject });
-  //   } else {
-  //     throw new Error('Sent email not found.');
-  //   }
-  // }
+
+  // if has notion url, perform insert
+  const notionUrl = cpDataObj.NotionUrl;
+  if (notionUrl) {
+    var recipent = emails.toEmails;
+    if (emails.ccEmails) recipent += ` cc: ` + emails.ccEmails;
+    if (emails.bccEmails) recipent += ` bcc: ` + emails.bccEmails;
+    appendBlockToNotion(notionUrl, undefined, `${recipent} (${subject})`, cpDataObj);
+  }
 
   newActivityLog(`Process '${cpDataObj.Name}' ran successfully!`);
 }
-
-// CURRENTLY DISABLED DUE TO REQUIRING ADDITIONAL AUTHORIZATION FOR GMAIL
-// function searchSentEmail(subject) {
-//   const threads = GA.search(`subject:${subject} in:sent`, 0, 1);
-//   if (threads.length > 0) {
-//     return threads[0];
-//   } else {
-//     return null;
-//   }
-// }
 
 function getFormResponses(gFormId) {
   var result = []
@@ -997,11 +1086,26 @@ function getActivityHistory() {
 
   var output = value.map(({ date, activity }) => `<li><p class="activity-date">${date}</p><p class="activity-details">${activity}</p></li>`).join("");
 
+  if (value.length == 0) {
+    return `<i style="font-size:12px;">There seems to be no history. Create a process if you haven't already and validate!</i>`;
+  }
+
   return output;
 }
 
 function clearActivityHistory() {
   PropertiesService.getScriptProperties().deleteProperty(PROPERTY_ACTIVITY_LOG);
+}
+
+function openInstructionPage(pageUrl) {
+  const title = 'Help Guide';
+  var template = HtmlService.createTemplateFromFile('iframe-page');
+  template.pageUrl = pageUrl;
+  template.title = title;
+  var htmlOutput = template.evaluate()
+    .setWidth(600)
+    .setHeight(600);
+  SpreadsheetApp.getUi().showModelessDialog(htmlOutput, title);
 }
 
 /*
@@ -1017,7 +1121,7 @@ function openNotionKeyPrompt() {
   })
 }
 
-function appendBlockToNotion(notionUrl, file, { emailUrl, emailSubject }) {
+function appendBlockToNotion(notionUrl, file, stringText = undefined, cpDataObj = undefined) {
   const notionApiKey = PropertiesService.getScriptProperties().getProperty(PROPERTY_NOTION_API_KEY);
   var blockId = extractNotionBlockId(notionUrl);
 
@@ -1031,16 +1135,21 @@ function appendBlockToNotion(notionUrl, file, { emailUrl, emailSubject }) {
     return false;
   }
 
-  const url = `https://api.notion.com/v1/blocks/${blockId}/children`;
+  const res = isSupportChildBlockNotion(notionUrl);
+  if (res.message) return; //there was an unexpected error, abort operation
 
-  var outputUrl, outputName;
+  const blockType = res.type;
+
+  const endpoint = `https://api.notion.com/v1/blocks/${blockId}/children`;
+
+  var outputName;
+  var outputLinkObj = null;
 
   if (file) {
-    outputUrl = file.getUrl();
     outputName = file.getName();
-  } else if ( emailUrl && emailSubject) {
-    outputUrl = emailUrl;
-    outputName = emailSubject;
+    outputLinkObj = { url: file.getUrl() };
+  } else if (stringText) {
+    outputName = stringText;
   }
 
   const headers = {
@@ -1049,22 +1158,7 @@ function appendBlockToNotion(notionUrl, file, { emailUrl, emailSubject }) {
     'Notion-Version': '2022-06-28'
   };
 
-  // const data = {
-  //   children: [
-  //     {
-  //       object: 'block',
-  //       type: 'file',
-  //       file: {
-  //         type: 'external',
-  //         external: {
-  //           url: outputUrl
-  //         }
-  //       }
-  //     }
-  //   ]
-  // }
-
-  const data = {
+  var data = {
     children: [
       {
         object: 'block',
@@ -1075,9 +1169,7 @@ function appendBlockToNotion(notionUrl, file, { emailUrl, emailSubject }) {
               type: 'text',
               text: {
                 content: outputName,
-                link: {
-                  url: outputUrl
-                }
+                link: outputLinkObj
               }
             }
           ]
@@ -1085,6 +1177,74 @@ function appendBlockToNotion(notionUrl, file, { emailUrl, emailSubject }) {
       }
     ]
   };
+
+  if (blockType === 'table' && res.table_width) {
+    var data_colums = [];
+
+    if (res.table_width >= 2) {
+      data_colums.push([
+        {
+          type: 'text',
+          text: {
+            content: getCurrentDateTimeString(),
+            link: null
+          }
+        }
+      ]);
+    }
+
+    if (res.table_width >= 3) {
+      var text = cpDataObj.Type.substring(cpDataObj.Type.length-3);
+      if (text == 'ail') text = 'Email';
+      data_colums.push([
+        {
+          type: 'text',
+          text: {
+            content: text,
+            link: null
+          }
+        }
+      ]);
+    }
+
+    data_colums.push([
+      {
+        type: 'text',
+        text: {
+          content: outputName,
+          link: outputLinkObj
+        }
+      }
+    ]);
+
+    if (res.table_width > 3) {
+      for (var i = 3; i < res.table_width; i++) {
+        data_colums.push([
+          {
+            type: 'text',
+            text: {
+              content: '',
+              link: null
+            }
+          }
+        ]);
+      }
+    }
+
+    console.log({ blockType, tw: res.table_width, data_colums })
+
+    data = {
+      children: [
+        {
+          object: 'block',
+          type: 'table_row',
+          table_row: {
+            cells: data_colums
+          }
+        }
+      ]
+    };
+  }
 
   const options = {
     method: 'patch',
@@ -1095,7 +1255,7 @@ function appendBlockToNotion(notionUrl, file, { emailUrl, emailSubject }) {
   };
 
   try {
-    const response = UrlFetchApp.fetch(url, options);
+    const response = UrlFetchApp.fetch(endpoint, options);
     const responseData = JSON.parse(response.getContentText());
     console.log('Block added:', responseData);
     return true;

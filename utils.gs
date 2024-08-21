@@ -1,31 +1,31 @@
 const DEFAULT_TYPE_TEMPLATE = {
   EMAIL: {
-    name: "Email Sample",
+    name: "Meeting Reminder",
     url: "https://docs.google.com/document/d/1LLRoaCZpEDCcByKSMTpsoav95Y5xhLmK5fLEJkda_d0/edit"
   },
   DOC_TO_DOC: {
-    name: "Doc Sample",
+    name: "Meeting Notes",
     url: "https://docs.google.com/document/d/1JpqjS33Jl-538x0XhxdLIJCQhOsC0JvnrGc1e4jfxVM/edit"
   },
   DOC_TO_PDF: {
-    name: "Doc Sample",
+    name: "Internship Contract",
     url: "https://docs.google.com/document/d/1OGE4YggdJnJWDOtPRMetByNULJD_c4HPNX_pEnfX1YM/edit"
   },
   SLIDE_TO_SLIDE: {
-    name: "Slide Sample",
-    url: "https://docs.google.com/presentation/d/1GaWQQmruGXa-2MM06aHinr5fNhTqsaZ5QDdd7y6MjOo/edit"
+    name: "Class Presentation",
+    url: "https://docs.google.com/presentation/d/1ChZHf4NxauZrwSibuqM44z4-3bhamH2U9gbLhfJz6Tk/edit"
   },
   SLIDE_TO_PDF: {
-    name: "Slide Sample",
-    url: "https://docs.google.com/presentation/d/1ndQrvvW2QWOYijM17yS6mmYdXGAl2uOyCHlT0Vma31k/edit"
+    name: "Class Presentation",
+    url: "https://docs.google.com/presentation/d/1FYluNikackMSbiIGkrohDwjL-CCqrUTgpx19r2Bo8fo/edit"
   },
   SHEET_TO_SHEET: {
-    name: "Sheet Sample",
-    url: "https://docs.google.com/spreadsheets/d/1kJpe7FUw8jhjOt7aWm5_y9DvR1KWU21rQG2MSmJw78A/edit"    
+    name: "Income Statement",
+    url: "https://docs.google.com/spreadsheets/d/1U9XaBTPsMrn3-A7oQbF2GbtiQ1qzlGfovWnsBLZIgfI/edit"    
   },
   SHEET_TO_PDF: {
-    name: "Sheet Sample",
-    url: "https://docs.google.com/spreadsheets/d/1aB3CuHHOZZbihWrKrk2ME781DoIxO55luDBNWsd5LYI/edit"    
+    name: "Purchase Order",
+    url: "https://docs.google.com/spreadsheets/d/1LKSaWXkjwFKClJZwBccYOhkO22Jw76hV1WkZbYWzHyE/edit?gid=943090944#gid=943090944"    
   }
 };
 
@@ -271,6 +271,26 @@ function deleteAllTrigger() {
   }
 }
 
+function getFolder(folderName) {
+  var projectFolder = getProjectFolder();
+
+  const drive = DriveApp.getFoldersByName(folderName);
+  // create project folder if not exist
+  if (!drive.hasNext()) {
+    DriveApp.createFolder(folderName);
+  } 
+  
+  var folder, folderParents;
+
+  do {
+    folder = DriveApp.getFoldersByName(folderName).next();
+    folderParents = folder.getParents().next();
+    folder.moveTo(projectFolder);
+  } while (folderParents.getName() != projectFolder.getName());
+
+  return folder;
+}
+
 function getProjectFolder() {
   const drive = DriveApp.getFoldersByName(PROJECT_FOLDER_NAME);
   // create project folder if not exist
@@ -427,4 +447,91 @@ function callGemini(prompt, temperature=0.5) {
 function getGeminiOutputContent(Keyword, str) {
   const rg = new RegExp(`(?<=<${Keyword}>).+?(?=<\/${Keyword}>)`);
   return str.match(rg);
+}
+
+function createAndLinkSpreadsheet(formId) {
+  // Create a new spreadsheet
+  var spreadsheet = SpreadsheetApp.create('Form Responses');
+  var spreadsheetId = spreadsheet.getId();
+  var spreadsheetUrl = spreadsheet.getUrl();
+  
+  // Open the form using the form ID
+  var form = FormApp.openById(formId);
+  
+  // Set the destination of form responses to the new spreadsheet
+  form.setDestination(FormApp.DestinationType.SPREADSHEET, spreadsheetId);
+  
+  return spreadsheetUrl;
+}
+
+function getSheetData(gFormId) {
+  const sheetUrl = getLinkedSpreadsheetUrl(gFormId);
+  const spreadsheet = SpreadsheetApp.openByUrl(sheetUrl);
+  const sheet = spreadsheet.getSheets()[0];
+  var data = sheet.getDataRange().getValues();
+  data.shift();
+  data.forEach(array => array.splice(0,1));
+  data = data.filter(subarray => !subarray.every(element => element === ''));
+  console.log({data});
+  // delete all
+  sheet.getRange(2,1,sheet.getLastRow(), sheet.getLastColumn()).setValue("");
+  return data;
+}
+
+function getLinkedSpreadsheetUrl(formId) {
+  // Open the form using the form ID
+  var form = FormApp.openById(formId);
+  
+  // Get the URL of the linked Google Sheets
+  var destinationId = form.getDestinationId();
+  if (destinationId) {
+    var spreadsheet = SpreadsheetApp.openById(destinationId);
+    var spreadsheetUrl = spreadsheet.getUrl();
+    return spreadsheetUrl;
+  } else {
+    return 'No linked spreadsheet found.';
+  }
+}
+
+function splitMergedCells(rangeA1Notation) {
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var range = sheet.getRange(rangeA1Notation);
+  var mergedRanges = range.getMergedRanges();
+  
+  mergedRanges.forEach(function(mergedRange) {
+    mergedRange.breakApart();
+  });
+}
+
+function mergeTwoColumns(rangeA1Notation) {
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var range = sheet.getRange(rangeA1Notation);
+  var numRows = range.getNumRows();
+  
+  for (var i = 1; i <= numRows; i++) {
+    var cell1 = range.getCell(i, 1);
+    var cell2 = range.getCell(i, 2);
+    sheet.getRange(cell1.getRow(), cell1.getColumn(), 1, 2).mergeAcross();
+  }
+}
+
+function splitMergedCellsByRow(row) {
+  splitMergedCells(`C${row}:D${row}`);
+}
+
+function mergeTwoColumnsByRow(row) {
+  mergeTwoColumns(`C${row}:D${row}`);
+}
+
+function clearAfterColumn(rowIndex, colIndex) {
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var lastColumn = sheet.getLastColumn();
+
+  console.log({colIndex, lastColumn});
+  
+  if (colIndex < lastColumn) {
+    var range = sheet.getRange(rowIndex, colIndex + 1, 1, lastColumn - colIndex);
+    console.log({values: range.getValues()})
+    range.clear();
+  }
 }

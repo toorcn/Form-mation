@@ -3,16 +3,20 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 4.6
-  Last Modified: 21 August 2024 11:00AM GMT+8
+  Version: 5.0
+  Last Modified: 22 August 2024 3:00AM GMT+8
 */
 
+// Note: Change of the first first columns here may require manual edit to splitMergedCellsByRow(), mergeTwoColumnsByRow()
 const SETUP_MAIN_COLUMN = [
-  "Enabled", "Name", "Type",
+  "Enabled", "Sheets", "Name", "FormSheetUrl", "Type",
   "TemplateUrl", "GDriveOutputUrl", "NotionUrl", "GFormUrl",
 ];
 
 const PROJECT_FOLDER_NAME = "Form-mation";
+const PROJECT_TEMPLATE_SUB_FOLDER_NAME = "Template (Form-mation)";
+const PROJECT_INPUT_SUB_FOLDER_NAME = "Input (Form-mation)";
+const PROJECT_OUTPUT_SUB_FOLDER_NAME = "Output (Form-mation)";
 const LATEST_ACTIVITY_LOG_COUNT = 50;
 const VAR_PREFIX = "{{";
 const VAR_SUFFIX = "}}";
@@ -96,7 +100,7 @@ function addRowBlank(type) {
       newDoc = DocumentApp.create("Document Template");
       processName = "Document Process";
     }
-    DriveApp.getFileById(newDoc.getId()).moveTo(getProjectFolder());
+    DriveApp.getFileById(newDoc.getId()).moveTo(getFolder(PROJECT_TEMPLATE_SUB_FOLDER_NAME));
     if (type === SUPPORTED_TYPE.EMAIL) {
       newDoc.getBody().setMarginBottom(0);
       newDoc.getBody().setMarginLeft(0);
@@ -110,7 +114,7 @@ function addRowBlank(type) {
     type === SUPPORTED_TYPE.SLIDE_TO_PDF
   ) {
     const file = SlidesApp.create("Slide Template");
-    DriveApp.getFileById(file.getId()).moveTo(getProjectFolder());
+    DriveApp.getFileById(file.getId()).moveTo(getFolder(PROJECT_TEMPLATE_SUB_FOLDER_NAME));
     processName = "Slide Process";
     templateUrl = `https://docs.google.com/presentation/d/${file.getId()}/edit`;
   } else if (
@@ -118,7 +122,7 @@ function addRowBlank(type) {
     type === SUPPORTED_TYPE.SHEET_TO_PDF
   ) {
     const file = SpreadsheetApp.create("Sheet Template");
-    DriveApp.getFileById(file.getId()).moveTo(getProjectFolder());
+    DriveApp.getFileById(file.getId()).moveTo(getFolder(PROJECT_TEMPLATE_SUB_FOLDER_NAME));
     processName = "Sheet Process";
     templateUrl = `https://docs.google.com/spreadsheets/d/${file.getId()}/edit`;
   }
@@ -129,7 +133,7 @@ function addRowBlank(type) {
   inputs[SETUP_MAIN_COLUMN.indexOf("Type")] = type;
   inputs[SETUP_MAIN_COLUMN.indexOf("TemplateUrl")] = templateUrl;
   if (type !== SUPPORTED_TYPE.EMAIL) {
-    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getProjectFolder().getUrl();
+    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getFolder(PROJECT_OUTPUT_SUB_FOLDER_NAME).getUrl();
   }
 
   sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
@@ -150,14 +154,14 @@ function addRowConversion(type) {
   const { url, name } = DEFAULT_TYPE_TEMPLATE[getKeyByValue(SUPPORTED_TYPE, type)];
 
   var templateFile = DriveApp.getFileById(getIdFromUrl(url));
-  var copy = templateFile.makeCopy(templateFile.getName(), getProjectFolder());
+  var copy = templateFile.makeCopy(templateFile.getName(), getFolder(PROJECT_TEMPLATE_SUB_FOLDER_NAME));
   var inputs = [];
 
   inputs[SETUP_MAIN_COLUMN.indexOf("Name")] = name;
   inputs[SETUP_MAIN_COLUMN.indexOf("Type")] = type;
   inputs[SETUP_MAIN_COLUMN.indexOf("TemplateUrl")] = copy.getUrl();
   if (type !== SUPPORTED_TYPE.EMAIL) {
-    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getProjectFolder().getUrl();
+    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getFolder(PROJECT_OUTPUT_SUB_FOLDER_NAME).getUrl();
   }
 
   sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
@@ -176,15 +180,25 @@ function openFeedback() {
 
 function onEdit(e) {
   const range = e.range;
-  const column = range.getColumn();
+  const col = range.getColumn();
   const row = range.getRow();
 
   range.clearNote();
 
-  if (column === 1 && range.getValue() === false) {
+  if (col === 1 && range.getValue() === false) {
     removeProcessNameHyperlink(row);
     range.setNote('Heads up! To deactivate a process, validate again.');
+  } else if (col === 2) {
+    removeProcessNameHyperlink(row);
+    if (range.getValue() === false) {
+      mergeTwoColumnsByRow(row);
+      range.setNote('Heads up! To deactivate or change a process, validate again.');
+    }
   }
+  // respawn checkboxes if deleted
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var checkboxRange = sheet.getRange(2, 1, sheet.getLastRow(), 2);
+  checkboxRange.insertCheckboxes();
 }
 
 // remove hyperlink to publish URL of Name
@@ -273,6 +287,60 @@ function reload() {
       continue;
     }
 
+    if (cpSetupObj.GFormUrl) {
+      // test if user has permission to links (forms)
+      try {
+        FormApp.openByUrl(cpSetupObj.GFormUrl).getEditors();
+      } catch (error) {
+        processFailCount++;
+        errorMsg = `You do not have permission to use one of the links of this process, please check the file permission and try again.`;
+        if (
+          disableRow(error == 'Exception: Action not allowed'
+          , row, errorMsg)
+        ) {
+          errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+          continue;
+        }
+        if (
+          disableRow(error == 'Exception: No item with the given ID could be found. Possibly because you have not edited this item or you do not have permission to access it.'
+          , row, errorMsg)
+        ) {
+          errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+          continue;
+        }
+        errorMsg = `Unexpected error when checking file access. Error: ${error}`;
+        disableRow(true, row, errorMsg);
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        Logger.log(`Uncaught error when checking file access for process: ${cpSetupObj.Name}, error: ${error}`);
+        continue;
+      }
+      if (cpSetupObj.Variables != 0) {
+        const form = FormApp.openByUrl(cpSetupObj.GFormUrl);
+        const formItems = form.getItems();
+
+        if (
+          (cpSetupObj.Sheets && formItems.length != 0) ||
+          (!cpSetupObj.Sheets && formItems.length == 0)
+        ) {
+          // try to delete destination sheet if exist
+          try {
+            const formSheetId = form.getDestinationId();
+            if (formSheetId) {
+              const file = DriveApp.getFileById(formSheetId);
+              file.setTrashed(true);
+            }
+          } catch (err) {}
+          // delete form
+          const file = DriveApp.getFileById(getIdFromUrl(cpSetupObj.GFormUrl));
+          file.setTrashed(true);
+
+          clearAfterColumn(row, SETUP_MAIN_COLUMN.indexOf("GFormUrl"));
+          cpSetupObj.GFormUrl = '';
+          cpSetupObj.Variables = [];
+        }
+      }
+    }
+
     if (
       cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC ||
       cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
@@ -303,13 +371,13 @@ function reload() {
         }
 
         addVariablesToCP(row, uVariables);
-        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables);
+        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables, row);
         SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("GFormUrl")+1).setValue(newGFormLink);
 
         // update cpSetupObj for the remainder of this process
         cpSetupObj.GFormUrl = newGFormLink;
         cpSetupObj.Variables = uVariables;
-      } else {
+      } else if (!cpSetupObj.Sheets) {
         // update control panel and form items of new variables found in template
         cpSetupObj = updateVariablesFromTemplate(cpSetupObj, row);
         // update form confirmation message with newest GDriveOutputUrl
@@ -343,13 +411,13 @@ function reload() {
         var uVariables = getSlidesUniqueVariables(cpSetupObj);
 
         addVariablesToCP(row, uVariables);
-        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables);
+        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables, row);
         SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("GFormUrl")+1).setValue(newGFormLink);
 
         // update cpSetupObj for the remainder of this process
         cpSetupObj.GFormUrl = newGFormLink;
         cpSetupObj.Variables = uVariables;
-      } else {
+      } else if (!cpSetupObj.Sheets) {
         // update control panel and form items of new variables found in template
         cpSetupObj = updateVariablesFromTemplate(cpSetupObj, row);
         // update form confirmation message with newest GDriveOutputUrl
@@ -379,13 +447,13 @@ function reload() {
         var uVariables = getSheetsUniqueVariables(cpSetupObj);
 
         addVariablesToCP(row, uVariables);
-        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables);
+        const newGFormLink = generateGoogleForms(cpSetupObj, uVariables, row);
         SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("GFormUrl")+1).setValue(newGFormLink);
 
         // update cpSetupObj for the remainder of this process
         cpSetupObj.GFormUrl = newGFormLink;
         cpSetupObj.Variables = uVariables;
-      } else {
+      } else if (!cpSetupObj.Sheets) {
         // update control panel and form items of new variables found in template
         cpSetupObj = updateVariablesFromTemplate(cpSetupObj, row);
         // update form confirmation message with newest GDriveOutputUrl
@@ -414,33 +482,6 @@ function reload() {
     ) {
       errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
       processFailCount++;
-      continue;
-    }
-
-    // test if user has permission to links (forms)
-    try {
-      FormApp.openByUrl(cpSetupObj.GFormUrl).getEditors();
-    } catch (error) {
-      processFailCount++;
-      errorMsg = `You do not have permission to use one of the links of this process, please check the file permission and try again.`;
-      if (
-        disableRow(error == 'Exception: Action not allowed'
-        , row, errorMsg)
-      ) {
-        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
-        continue;
-      }
-      if (
-        disableRow(error == 'Exception: No item with the given ID could be found. Possibly because you have not edited this item or you do not have permission to access it.'
-        , row, errorMsg)
-      ) {
-        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
-        continue;
-      }
-      errorMsg = `Unexpected error when checking file access. Error: ${error}`;
-      disableRow(true, row, errorMsg);
-      errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
-      Logger.log(`Uncaught error when checking file access for process: ${cpSetupObj.Name}, error: ${error}`);
       continue;
     }
 
@@ -627,11 +668,23 @@ function createTrigger(cpSetupObj, funcName) {
 function onSheetTrigger(e) {
   // get form by triggerUid
   const gFormId = getFileByTriggerId(e.triggerUid);
-  // Retrieve submitted form data
-  const formResponseData = getLatestFormResponse(gFormId);
   // Get control panel setup data based on formId
   var cpDataObj = getCPSetupFromFormId(gFormId);
 
+  if (cpDataObj.Sheets) {
+    const formDataResponses = getSheetData(gFormId);
+    for (var i = 0; i < formDataResponses.length; i++) {
+      const formDataResponse = formDataResponses[i];
+      createSheetOutput(cpDataObj, formDataResponse);
+    }
+  } else {
+    // Retrieve submitted form data
+    const formResponseData = getLatestFormResponse(gFormId);
+    createSheetOutput(cpDataObj, formResponseData);
+  }
+}
+
+function createSheetOutput(cpDataObj, formResponseData) {
   // get gsheets template
   const templateSheet = SpreadsheetApp.openByUrl(cpDataObj.TemplateUrl);
   const gSheetsTemplate = DriveApp.getFileById(templateSheet.getId());
@@ -678,11 +731,23 @@ function onSheetTrigger(e) {
 function onSlideTrigger(e) {
   // get form by triggerUid
   const gFormId = getFileByTriggerId(e.triggerUid);
-  // Retrieve submitted form data
-  const formResponseData = getLatestFormResponse(gFormId);
   // Get control panel setup data based on formId
   var cpDataObj = getCPSetupFromFormId(gFormId);
 
+  if (cpDataObj.Sheets) {
+    const formDataResponses = getSheetData(gFormId);
+    for (var i = 0; i < formDataResponses.length; i++) {
+      const formDataResponse = formDataResponses[i];
+      createSlideOutput(cpDataObj, formDataResponse);
+    }
+  } else {
+    // Retrieve submitted form data
+    const formResponseData = getLatestFormResponse(gFormId);
+    createSlideOutput(cpDataObj, formResponseData);
+  }
+}
+
+function createSlideOutput(cpDataObj, formResponseData) {
   // get gslides template
   const templateSlide = SlidesApp.openByUrl(cpDataObj.TemplateUrl);
   const gSlidesTemplate = DriveApp.getFileById(templateSlide.getId());
@@ -738,7 +803,7 @@ function onSlideTrigger(e) {
     }
   });
 
-  slides.setName(outputFileName);  
+  slides.setName(outputFileName);
   slides.saveAndClose();
 
   var outputFile = slides;
@@ -763,11 +828,23 @@ function onSlideTrigger(e) {
 function onDocTrigger(e) {
   // get form by triggerUid
   const gFormId = getFileByTriggerId(e.triggerUid);
-  // Retrieve submitted form data
-  const formResponseData = getLatestFormResponse(gFormId);
   // Get control panel setup data based on formId
   var cpDataObj = getCPSetupFromFormId(gFormId);
 
+  if (cpDataObj.Sheets) {
+    const formDataResponses = getSheetData(gFormId);
+    for (var i = 0; i < formDataResponses.length; i++) {
+      const formDataResponse = formDataResponses[i];
+      createDocOutput(cpDataObj, formDataResponse);
+    }
+  } else {
+    // Retrieve submitted form data
+    const formResponseData = getLatestFormResponse(gFormId);
+    createDocOutput(cpDataObj, formResponseData);
+  }
+}
+
+function createDocOutput(cpDataObj, formResponseData) {
   // get gdoc template
   const templateDoc = DocumentApp.openByUrl(cpDataObj.TemplateUrl);
   const gDocTemplate = DriveApp.getFileById(templateDoc.getId());
@@ -801,7 +878,7 @@ function onDocTrigger(e) {
     outputFileName = strReplaceAll(outputFileName, VAR_PREFIX + variableName + VAR_SUFFIX, replacementData);
   }
   
-  doc.setName(outputFileName); 
+  doc.setName(outputFileName);
   doc.saveAndClose();
 
   var outputFile = doc;
@@ -825,14 +902,28 @@ function onDocTrigger(e) {
 function onEmailTrigger(e) {
   // get form by triggerUid
   const gFormId = getFileByTriggerId(e.triggerUid);
-  // Retrieve submitted form data
-  const formResponseData = getLatestFormResponse(gFormId);
   // Get control panel setup data based on formId
   var cpDataObj = getCPSetupFromFormId(gFormId);
-
   // Stop operation if first variable is not {EMAIL}
-  if (cpDataObj.Variables[0] != "EMAIL") return;
+  if (cpDataObj.Variables[0] != "EMAIL") {
+    newActivityLog(`Process '${cpDataObj.Name}' aborted, please reset your Google Forms. Refer to 'My Google Forms is getting quite messy or there seems to be a problem' in the Information panel.`);
+    return;
+  }
 
+  if (cpDataObj.Sheets) {
+    const formDataResponses = getSheetData(gFormId);
+    for (var i = 0; i < formDataResponses.length; i++) {
+      const formDataResponse = formDataResponses[i];
+      createEmailOutput(cpDataObj, formDataResponse);
+    }
+  } else {
+    // Retrieve submitted form data
+    const formResponseData = getLatestFormResponse(gFormId);
+    createEmailOutput(cpDataObj, formResponseData);
+  }
+}
+
+function createEmailOutput(cpDataObj, formResponseData) {
   // get gdoc template
   const templateDoc = DocumentApp.openByUrl(cpDataObj.TemplateUrl);
 
@@ -1035,15 +1126,10 @@ function addVariablesToCP(row, variables) {
   });
 }
 
-function generateGoogleForms(cpDataObj, uVariables, existingFormUrl = undefined) {
-  var form;
-  if (existingFormUrl) {
-    form = FormApp.openByUrl(existingFormUrl);
-  } else {
-    const newForm = FormApp.create(cpDataObj.Name);
-    DriveApp.getFileById(newForm.getId()).moveTo(getProjectFolder());
-    form = FormApp.openById(newForm.getId());
-  }
+function generateGoogleForms(cpDataObj, uVariables, row) {
+  const newForm = FormApp.create(cpDataObj.Name);
+  DriveApp.getFileById(newForm.getId()).moveTo(getFolder(PROJECT_INPUT_SUB_FOLDER_NAME));
+  var form = FormApp.openById(newForm.getId());
 
   uVariables.forEach(function(variable) {
     const formItem = form.addParagraphTextItem();
@@ -1068,6 +1154,17 @@ function generateGoogleForms(cpDataObj, uVariables, existingFormUrl = undefined)
   }
 
   newActivityLog(`Auto retrieved placeholders and generated Google Forms for process '${cpDataObj.Name}'.`);
+
+  if (cpDataObj.Sheets) {
+    var sheetUrl = createAndLinkSpreadsheet(form.getId());
+    const formItems = form.getItems();
+    for (var i = 0; i < formItems.length; i++) {
+      const formItem = formItems[i];
+      form.deleteItem(formItem);
+    }
+    splitMergedCellsByRow(row);
+    SpreadsheetApp.getActiveSheet().getRange(row, SETUP_MAIN_COLUMN.indexOf("FormSheetUrl")+1).setValue(sheetUrl);
+  }
   return form.getEditUrl();
 }
 
@@ -1398,7 +1495,7 @@ Output format:
 
     const doc = DocumentApp.create(fileName);
     const docId = doc.getId();
-    DriveApp.getFileById(docId).moveTo(getProjectFolder());
+    DriveApp.getFileById(docId).moveTo(getFolder(PROJECT_TEMPLATE_SUB_FOLDER_NAME));
     fileUrl = `https://docs.google.com/document/d/${docId}/edit`;
 
     if (selectedType === SUPPORTED_TYPE.EMAIL) {
@@ -1452,7 +1549,7 @@ Output format:
     // Create a Google Slides presentation.
     const presentation = SlidesApp.create(fileName);
     const fileId = presentation.getId();
-    DriveApp.getFileById(fileId).moveTo(getProjectFolder());
+    DriveApp.getFileById(fileId).moveTo(getFolder(PROJECT_TEMPLATE_SUB_FOLDER_NAME));
     fileUrl = `https://docs.google.com/presentation/d/${fileId}/edit`;
 
     // Set up the opening slide.
@@ -1497,7 +1594,7 @@ function geminiInsert(type, name, templateUrl) {
   inputs[SETUP_MAIN_COLUMN.indexOf("Type")] = type;
   inputs[SETUP_MAIN_COLUMN.indexOf("TemplateUrl")] = templateUrl;
   if (type !== SUPPORTED_TYPE.EMAIL) {
-    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getProjectFolder().getUrl();
+    inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getFolder(PROJECT_OUTPUT_SUB_FOLDER_NAME).getUrl();
   }
 
   sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);

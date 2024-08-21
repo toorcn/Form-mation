@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 4.5
-  Last Modified: 21 August 2024 1:40AM GMT+8
+  Version: 4.6
+  Last Modified: 21 August 2024 11:00AM GMT+8
 */
 
 const SETUP_MAIN_COLUMN = [
@@ -26,8 +26,8 @@ const NOTION_SUPPORTED_TYPE = ['bulleted_list_item', 'callout', 'child_database'
 
 const SUPPORTED_TYPE = {
   EMAIL: "Email",
-  DOC_TO_PDF: "Doc-to-PDF",
   DOC_TO_DOC: "Doc-to-Doc",
+  DOC_TO_PDF: "Doc-to-PDF",
   SLIDE_TO_SLIDE: "Slide-to-Slide",
   SLIDE_TO_PDF: "Slide-to-PDF",
   SHEET_TO_SHEET: "Sheet-to-Sheet",
@@ -39,25 +39,25 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Form-mation')
     .addItem('✔ Validate', 'reload')
-    .addItem('ℹ Information', 'openSidebar')
+    .addItem('ℹ Information (Help)', 'openSidebar')
     .addSeparator()
     .addSubMenu(SpreadsheetApp.getUi().createMenu('📄 Create a Blank Process')
       .addItem('Email','setEmailBlank')
-      .addItem('Doc To Doc','setDocToDocBlank')
-      .addItem('Doc To PDF','setDocToPdfBlank')
-      .addItem('Slide To Slide','setSlideToSlideBlank')
-      .addItem('Slide To PDF','setSlideToPdfBlank')
-      .addItem('Sheet To Sheet', 'setSheetToSheetBlank')
-      .addItem('Sheet To PDF', 'setSheetToPdfBlank')
+      .addItem('Doc-to-Doc','setDocToDocBlank')
+      .addItem('Doc-to-PDF','setDocToPdfBlank')
+      .addItem('Slide-to-Slide','setSlideToSlideBlank')
+      .addItem('Slide-to-PDF','setSlideToPdfBlank')
+      .addItem('Sheet-to-Sheet', 'setSheetToSheetBlank')
+      .addItem('Sheet-to-PDF', 'setSheetToPdfBlank')
     )
     .addSubMenu(SpreadsheetApp.getUi().createMenu('💡 Create a Sample Process')
       .addItem('Email','setEmailConversion')
-      .addItem('Doc To Doc','setDocToDocConversion')
-      .addItem('Doc To PDF','setDocToPdfConversion')
-      .addItem('Slide To Slide','setSlideToSlideConversion')
-      .addItem('Slide To PDF','setSlideToPdfConversion')
-      .addItem('Sheet To Sheet', 'setSheetToSheetConversion')
-      .addItem('Sheet To PDF', 'setSheetToPdfConversion')
+      .addItem('Doc-to-Doc','setDocToDocConversion')
+      .addItem('Doc-to-PDF','setDocToPdfConversion')
+      .addItem('Slide-to-Slide','setSlideToSlideConversion')
+      .addItem('Slide-to-PDF','setSlideToPdfConversion')
+      .addItem('Sheet-to-Sheet', 'setSheetToSheetConversion')
+      .addItem('Sheet-to-PDF', 'setSheetToPdfConversion')
     )
     .addItem('✨ Co-Create a Process with Gemini', 'openGeminiPrompt')
     .addSeparator()
@@ -231,9 +231,8 @@ function reload() {
       continue;
     };
 
-    // test if user has permission to links (template, folder, forms)
+    // test if user has permission to links (template, folder)
     try {
-      FormApp.openByUrl(cpSetupObj.GFormUrl).getEditors();
       if (
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_DOC ||
         cpSetupObj.Type === SUPPORTED_TYPE.DOC_TO_PDF ||
@@ -415,6 +414,33 @@ function reload() {
     ) {
       errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
       processFailCount++;
+      continue;
+    }
+
+    // test if user has permission to links (forms)
+    try {
+      FormApp.openByUrl(cpSetupObj.GFormUrl).getEditors();
+    } catch (error) {
+      processFailCount++;
+      errorMsg = `You do not have permission to use one of the links of this process, please check the file permission and try again.`;
+      if (
+        disableRow(error == 'Exception: Action not allowed'
+        , row, errorMsg)
+      ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        continue;
+      }
+      if (
+        disableRow(error == 'Exception: No item with the given ID could be found. Possibly because you have not edited this item or you do not have permission to access it.'
+        , row, errorMsg)
+      ) {
+        errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+        continue;
+      }
+      errorMsg = `Unexpected error when checking file access. Error: ${error}`;
+      disableRow(true, row, errorMsg);
+      errorMsgs.push({ message: errorMsg, row, name: cpSetupObj.Name });
+      Logger.log(`Uncaught error when checking file access for process: ${cpSetupObj.Name}, error: ${error}`);
       continue;
     }
 
@@ -1194,13 +1220,20 @@ function appendBlockToNotion(notionUrl, file, stringText = undefined, cpDataObj 
     }
 
     if (res.table_width >= 3) {
-      var text = cpDataObj.Type.substring(cpDataObj.Type.length-3);
-      if (text == 'ail') text = 'Email';
+      const typeDict = {
+        "Email": "Email",
+        "Doc-to-Doc": "Google Docs",
+        "Doc-to-PDF": "PDF",
+        "Slide-to-Slide": "Google Slides",
+        "Slide-to-PDF": "PDF",
+        "Sheet-to-Sheet": "Google Sheets",
+        "Sheet-to-PDF": "PDF"
+      }
       data_colums.push([
         {
           type: 'text',
           text: {
-            content: text,
+            content: typeDict[cpDataObj.Type],
             link: null
           }
         }
@@ -1330,6 +1363,7 @@ Output format:
   } else if (rerun >= 5) return false;
 
   var geminiOutput = callGemini(prompt);
+  if (callGemini === false) return false;
   Logger.log({selectedType, textDescription, rerun})
   Logger.log({geminiOutput});
 

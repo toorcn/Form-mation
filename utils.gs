@@ -319,7 +319,16 @@ function getNotionUrlType(notionUrl) {
   if (responseData.heading_2) is_toggleable = responseData.heading_2.is_toggleable;
   if (responseData.heading_3) is_toggleable = responseData.heading_3.is_toggleable;
 
-  return { type: responseData.type, is_toggleable };
+  var result = {
+    type: responseData.type,
+    is_toggleable
+  };
+
+  if (responseData?.table?.table_width > 0) {
+    result['table_width'] = responseData.table.table_width;
+  }
+
+  return result;
 }
 
 
@@ -336,13 +345,13 @@ function isSupportChildBlockNotion(notionUrl) {
         return res;
     }
   }
-  if (res.is_toggleable) return res.type;
+  if (res.is_toggleable) return res;
   console.log(`isSupportChildBlockNotion type:${res.type} `);
   if (
     NOTION_SUPPORTED_TYPE.includes(res.type) &&
     res.is_toggleable === undefined
   ) {
-    return res.type;
+    return res;
   }
   return false;
 }
@@ -395,11 +404,22 @@ function callGemini(prompt, temperature=0.5) {
   const options = { 
     'method' : 'post',
     'contentType': 'application/json',
-    'payload': JSON.stringify(payload)
+    'payload': JSON.stringify(payload),
+    'muteHttpExceptions': true
   };
 
-  const response = UrlFetchApp.fetch(geminiEndpoint, options);
+  var response = UrlFetchApp.fetch(geminiEndpoint, options);
   const data = JSON.parse(response);
+  if (data?.error?.message == "API key expired. Please renew the API key.") {
+    const ui = SpreadsheetApp.getUi();
+    // Override and close Gemini Modal
+    var output = HtmlService.createHtmlOutput('<script>google.script.host.close();</script>');
+    ui.showModalDialog(output, 'Loading...');
+    // Alert user to error and abort
+    ui.alert(`Gemini Authorization Error`, `Your Gemini API Key may be invalid or have expired. Please update your API key before trying again.`, ui.ButtonSet.OK);
+    PropertiesService.getScriptProperties().deleteProperty(PROPERTY_GEMINI_API_KEY);
+    return false;
+  }
   const content = data["candidates"][0]["content"]["parts"][0]["text"];
   return content;
 }

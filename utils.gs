@@ -21,11 +21,11 @@ const DEFAULT_TYPE_TEMPLATE = {
   },
   SHEET_TO_SHEET: {
     name: "Income Statement",
-    url: "https://docs.google.com/spreadsheets/d/1U9XaBTPsMrn3-A7oQbF2GbtiQ1qzlGfovWnsBLZIgfI/edit"    
+    url: "https://docs.google.com/spreadsheets/d/1zkDHvif8-pmAUHfGOzRESjFvPE1Q19_r9Yzf2DNfGNE/edit"    
   },
   SHEET_TO_PDF: {
     name: "Purchase Order",
-    url: "https://docs.google.com/spreadsheets/d/1LKSaWXkjwFKClJZwBccYOhkO22Jw76hV1WkZbYWzHyE/edit?gid=943090944#gid=943090944"    
+    url: "https://docs.google.com/spreadsheets/d/1k1ciW8-v5XH3y-vHRVLZMtHHavMJOlfxSEPpSQ9J-mk/edit?gid=1194874101#gid=1194874101"    
   }
 };
 
@@ -384,7 +384,15 @@ function openInputKeyPrompt({
 }) {
   const scriptProperties = PropertiesService.getScriptProperties();
   const ui = SpreadsheetApp.getUi();
-  const response = ui.prompt(`Setting your ${keyName}`, `Key (${scriptProperties.getProperty(propertyName)})\n\nTo remove your ${keyName}, enter 'UNSET'.`, ui.ButtonSet.OK_CANCEL);
+  var propertyValue = scriptProperties.getProperty(propertyName);
+  if (propertyValue) propertyValue = propertyValue.substring(0, propertyValue.length-8) + '********';
+  
+  var keyPromptMsg = `Key (${propertyValue})\n\nTo remove your ${keyName}, enter 'UNSET'.`;
+  if (!propertyValue) {
+    keyPromptMsg = `Get your ${keyName} here: ${getKeyUrl}\nIt looks something like this: '${keySample}'`;
+  }
+
+  const response = ui.prompt(`Setting your ${keyName}`, keyPromptMsg, ui.ButtonSet.OK_CANCEL);
   const responseText = response.getResponseText();
   const responseButton = response.getSelectedButton();
   if (responseButton != "OK") return;
@@ -454,6 +462,7 @@ function createAndLinkSpreadsheet(formId) {
   var spreadsheet = SpreadsheetApp.create('Form Responses');
   var spreadsheetId = spreadsheet.getId();
   var spreadsheetUrl = spreadsheet.getUrl();
+  DriveApp.getFileById(spreadsheetId).moveTo(getFolder(PROJECT_INPUT_SUB_FOLDER_NAME));
   
   // Open the form using the form ID
   var form = FormApp.openById(formId);

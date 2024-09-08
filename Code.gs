@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 5.0
-  Last Modified: 22 August 2024 3:00AM GMT+8
+  Version: 5.1 ALPHA
+  Last Modified: 22 August 2024 4:20PM GMT+8
 */
 
 // Note: Change of the first first columns here may require manual edit to splitMergedCellsByRow(), mergeTwoColumnsByRow()
@@ -55,13 +55,13 @@ function onOpen() {
       .addItem('Sheet-to-PDF', 'setSheetToPdfBlank')
     )
     .addSubMenu(SpreadsheetApp.getUi().createMenu('💡 Create a Sample Process')
-      .addItem('Email','setEmailConversion')
-      .addItem('Doc-to-Doc','setDocToDocConversion')
-      .addItem('Doc-to-PDF','setDocToPdfConversion')
-      .addItem('Slide-to-Slide','setSlideToSlideConversion')
-      .addItem('Slide-to-PDF','setSlideToPdfConversion')
-      .addItem('Sheet-to-Sheet', 'setSheetToSheetConversion')
-      .addItem('Sheet-to-PDF', 'setSheetToPdfConversion')
+      .addItem(`Email (${DEFAULT_TYPE_TEMPLATE.EMAIL.name})`,'setEmailConversion')
+      .addItem(`Doc-to-Doc (${DEFAULT_TYPE_TEMPLATE.DOC_TO_DOC.name})`,'setDocToDocConversion')
+      .addItem(`Doc-to-PDF (${DEFAULT_TYPE_TEMPLATE.DOC_TO_PDF.name})`,'setDocToPdfConversion')
+      .addItem(`Slide-to-Slide (${DEFAULT_TYPE_TEMPLATE.SLIDE_TO_SLIDE.name})`,'setSlideToSlideConversion')
+      .addItem(`Slide-to-PDF (${DEFAULT_TYPE_TEMPLATE.SLIDE_TO_PDF.name})`,'setSlideToPdfConversion')
+      .addItem(`Sheet-to-Sheet (${DEFAULT_TYPE_TEMPLATE.SHEET_TO_SHEET.name})`, 'setSheetToSheetConversion')
+      .addItem(`Sheet-to-PDF (${DEFAULT_TYPE_TEMPLATE.SHEET_TO_PDF.name})`, 'setSheetToPdfConversion')
     )
     .addItem('✨ Co-Create a Process with Gemini', 'openGeminiPrompt')
     .addSeparator()
@@ -1442,7 +1442,7 @@ function runGemini(selectedType, textDescription, rerun = 0) {
 Generate a suitable file name without extensions, preferably with spaces, or a subject line for email templates. Create a process label name based on the provided description.
 
 Output format:
-<TEMPLATE_CONTENT>[template content (Do not include subject name)]</TEMPLATE_CONTENT>
+<TEMPLATE_CONTENT>[template content (Do not include email subject)]</TEMPLATE_CONTENT>
 <FILE_NAME>[suggested file name]</FILE_NAME>
 <EMAIL_SUBJECT>[if type is "Email", suggested email subject]</EMAIL_SUBJECT>
 <PROCESS_NAME>[suggested short and concise process label name]</PROCESS_NAME>

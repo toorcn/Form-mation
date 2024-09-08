@@ -3,8 +3,8 @@
   Project Name: Form-mation
   Team: SCAC
   Developer: Hong, Kar Kin
-  Version: 5.1 ALPHA
-  Last Modified: 22 August 2024 4:20PM GMT+8
+  Version: 5.1
+  Last Modified: 8 September 2024 10:40PM GMT+8
 */
 
 // Note: Change of the first first columns here may require manual edit to splitMergedCellsByRow(), mergeTwoColumnsByRow()
@@ -75,14 +75,6 @@ function onOpen() {
 // adds blank process & template
 function addRowBlank(type) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getDataRange().getValues();
-
-  for (var j = 1; j < data.length; j++) {
-    if (data[j][1] == "") {
-      var lastRow = j
-      break;
-    }
-  }
 
   var processName = "";
   var templateUrl = "";
@@ -136,20 +128,12 @@ function addRowBlank(type) {
     inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getFolder(PROJECT_OUTPUT_SUB_FOLDER_NAME).getUrl();
   }
 
-  sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
+  sheet.getRange(getEmptyRowIndex() + 1, 1, 1, inputs.length).setValues([inputs]);
 }
 
 // adds sample process & template from making a copy of a predefined document
 function addRowConversion(type) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getDataRange().getValues();
-
-  for (var j = 1; j < data.length; j++) {
-    if (data[j][1] == "") {
-      var lastRow = j
-      break;
-    }
-  }
 
   const { url, name } = DEFAULT_TYPE_TEMPLATE[getKeyByValue(SUPPORTED_TYPE, type)];
 
@@ -164,7 +148,7 @@ function addRowConversion(type) {
     inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getFolder(PROJECT_OUTPUT_SUB_FOLDER_NAME).getUrl();
   }
 
-  sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
+  sheet.getRange(getEmptyRowIndex() + 1, 1, 1, inputs.length).setValues([inputs]);
 }
 
 function openFeedback() {
@@ -1579,14 +1563,6 @@ Output format:
 
 function geminiInsert(type, name, templateUrl) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getDataRange().getValues();
-
-  for (var j = 1; j < data.length; j++) {
-    if (data[j][1] == "") {
-      var lastRow = j
-      break;
-    }
-  }
 
   var inputs = [];
 
@@ -1597,5 +1573,5 @@ function geminiInsert(type, name, templateUrl) {
     inputs[SETUP_MAIN_COLUMN.indexOf("GDriveOutputUrl")] = getFolder(PROJECT_OUTPUT_SUB_FOLDER_NAME).getUrl();
   }
 
-  sheet.getRange(lastRow + 1, 1, 1, inputs.length).setValues([inputs]);
+  sheet.getRange(getEmptyRowIndex() + 1, 1, 1, inputs.length).setValues([inputs]);
 }

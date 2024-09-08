@@ -85,6 +85,20 @@ function getControlPanelSetups() {
   return result;
 }
 
+function getEmptyRowIndex() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+  const nameIndex = SETUP_MAIN_COLUMN.indexOf("Name");
+
+  for (var j = 1; j < data.length; j++) {
+    if (data[j][nameIndex] == "") {
+      var lastRow = j
+      break;
+    }
+  }
+  return lastRow;
+}
+
 function getIdFromUrl(url) { return url.match(/[-\w]{25,}/); }
 
 function getCPSetupFromFormId(gFormId) {
